@@ -2,6 +2,7 @@
 
 #include <stdarg.h>
 #include <stddef.h>
+#include <stdint.h>
 
 #define BUFSIZ 8192
 #define EOF (-1)

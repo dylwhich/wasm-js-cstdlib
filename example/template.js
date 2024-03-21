@@ -169,24 +169,6 @@ let imports = {
 			HEAP16[ph>>1] = canvas.height;
 		},
 		OGGetAbsoluteTime : () => { return new Date().getTime()/1000.; },
-
-		Add1 : (i) => { return i+1; }, //Super simple function for speed testing.
-
-		//Tricky - math functions just automatically link through.
-		sin : Math.sin,
-		cos : Math.cos,
-		tan : Math.tan,
-		sinf : Math.sin,
-		cosf : Math.cos,
-		tanf : Math.tan,
-
-		//Quick-and-dirty debug.
-		print: console.log,
-		prints: (str) => { console.log(toUTF8(str)); },
-		putc: (chr) => {
-			console.log(String.fromCharCode(chr));
-			return chr;
-		},
 	}
 };
 
@@ -269,6 +251,7 @@ if( RAWDRAW_NEED_BLITTER )
 		};
 }
 
+// Import wasm-jstdlib and configure it, and ask it to set up our imports
 import("../js/main.js").then(function(stdlib) {
 	stdlib.default(imports, {
 		filesystem: {
@@ -322,10 +305,11 @@ import("../js/main.js").then(function(stdlib) {
 				document.addEventListener('keyup', e => { instance.exports.HandleKey( e.keyCode, 0 ); } );
 			}
 
+			stdlib.postInstantiate(wa.instance);
 
 			//Actually invoke main().  Note that, upon "CNFGSwapBuffers" this will 'exit'
 			//But, will get re-entered from the swapbuffers animation callback.
-			instance.exports.main(0, 0);
+			instance.exports.main(1|0, 0|0);
 
 			if( RAWDRAW_USE_LOOP_FUNCTION )
 			{
