@@ -13,7 +13,8 @@ CFLAGS_WASM = \
 	-Wl,--lto-O3 \
 	-Wl,--no-entry \
 	-Wl,--allow-undefined \
-	-Wl,--import-memory
+	-Wl,--import-memory \
+	-Wl,--export=__heap_base
 
 CFLAGS_WASM += \
 	-nostdlib \

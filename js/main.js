@@ -12,6 +12,7 @@ import * as pointers from "./util/pointers.js";
 import assertConfig from "./assert.js";
 import direntConfig from "./dirent.js";
 import inttypesConfig from "./inttypes.js";
+import mallocConfig, { postInstantiate as mallocPostInst } from "./malloc.js";
 import mathConfig from "./math.js";
 import stdargConfig from "./stdarg.js";
 import stddefConfig from "./stddef.js";
@@ -30,6 +31,12 @@ const baseConf = {
             flags: ["rw"],
         },
     },
+}
+
+export function postInstantiate(instance) {
+    // Hand __heap_base to malloc()
+    // - Note: it must be exported with -Wl,--export=__heap_base
+    mallocPostInst(instance);
 }
 
 /**
@@ -53,6 +60,7 @@ export default function configure(imports, settings) {
     assertConfig(imports, settings);
     direntConfig(imports, settings);
     inttypesConfig(imports, settings);
+    mallocConfig(imports, settings);
     mathConfig(imports, settings);
     stdargConfig(imports, settings);
     stddefConfig(imports, settings);
