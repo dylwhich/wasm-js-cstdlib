@@ -1,7 +1,9 @@
-import { getStr, writeStr, getArrUint8 } from './util/pointers.js'
+import { getStr, writeStr, getArrUint8, getStaticHeapSize } from './util/pointers.js'
 
 // WebAssembly.Memory page size
 const PAGE_SIZE = 64 * 1024;
+
+// Size of one of our blocks in JsHeap
 const BLOCK_SIZE = 256;
 
 function sortedIndex(array, value) {
@@ -56,23 +58,14 @@ class JsHeap {
 
     // Marks a continuous region of memory as free
     #markFree(start, end) {
-        const ins = Array.from({length: end - start + 1}, (e, i) => {i + start});
-        this.freeBlocks.splice(sortedIndex(this.freeBlocks, start) + 1, 0, ins);
+        const ins = Array.from({length: end - start + 1}, (e, i) => {return i + start});
+        this.freeBlocks.splice(sortedIndex(this.freeBlocks, start), 0, ...ins);
     }
 
+    // Marks a continuous region of memory as in use
     #markUsed(start, end) {
-        // TODO make sure this actually works???
         this.freeBlocks.splice(sortedIndex(this.freeBlocks, start), end - start + 1);
     }
-
-    /*findBlockIndex(addr) {
-        let index = ((addr - this.start) / 256) / 0;
-        if (index >= 0 && index < this.blocks.length) {
-            return index;
-        }
-
-        return -1;
-    }*/
 
     #isRegionFree(startIndex, blockCount) {
         let i = sortedIndex(this.freeBlocks, startIndex);
@@ -85,15 +78,19 @@ class JsHeap {
         return count == blockCount;
     }
 
+    // Searches for a region of free blocks of length at blockCount
+    // returns the index of the starting block, or -1 if no region was found
     #findContinuousRegion(blockCount) {
-        if (this.freeBlocks.length < blockCount)
-        {
+        if (this.freeBlocks.length < blockCount) {
             return -1;
         }
 
+        // The "best" fitting region found so far
+        // That means, the first, smallest region large enough for all blocks
         let regionStart = 0;
         let regionLen = 0;
 
+        // The region currently being
         let curStart = 0;
         let curLen = 0;
 
@@ -117,6 +114,7 @@ class JsHeap {
                     }
                 }
 
+                // Reset the length and advance the start
                 curStart++;
                 curLen = 0;
 
@@ -167,31 +165,45 @@ class JsHeap {
         }
 
         const blocksNeeded = ((size + BLOCK_SIZE - 1) / BLOCK_SIZE) | 0;
+        // Search for an existing block of appropriate size
         let firstBlockInd = this.#findContinuousRegion(blocksNeeded);
-        if (firstBlockInd == -1) {
+
+        if (firstBlockInd === -1) {
+            // No existing block found, allocate new one, already marked used
             firstBlockInd = this.#allocateNew(blocksNeeded, size);
+        } else {
+            // Existing block found! Mark it as used
+            this.#markUsed(firstBlockInd, firstBlockInd + blocksNeeded - 1);
         }
 
-        if (firstBlockInd == -1) {
-            console.log("Couldn't allocate more memory???");
+        // We failed to allocate a new block
+        if (firstBlockInd === -1) {
+            console.error("Couldn't allocate more memory???");
             return 0;
         }
 
+        // Track the allocation's start and actual size here
         const alloc = new HeapAllocation(firstBlockInd, size);
 
+        // Add a ref to the allocation info from each block
         for (let i = 0; i < blocksNeeded; i++) {
             this.blocks[firstBlockInd + i].allocation = alloc;
         }
 
+        // Calculate the actual address
         const startAddr = this.blocks[firstBlockInd].start;
+        // Add a map entry for the allocation, so we can find it again later!
         this.allocations[startAddr] = alloc;
+
+        console.debug("Malloc returned %o", startAddr);
 
         return startAddr;
     }
 
     reallocate(address, size) {
-        // realloc(ptr, 0) is equivalent to free(ptr)
+        // realloc(ptr, 0) is either equivalent to free(ptr) or nothing
         if (size == 0) {
+            log.warn("Using reallocate() with size=0 isn't portable, consider free instead");
             this.deallocate(address);
             return 0;
         }
@@ -201,8 +213,12 @@ class JsHeap {
             const newBlockCount = ((size + BLOCK_SIZE - 1) / BLOCK_SIZE | 0);
 
             if (size <= alloc.bytes) {
-                // TODO: Support shrinking... pretty straightforward actually
-                // But for now just return the original block, they'll never know it's still the same size!
+                if (alloc.blocks > newBlockCount) {
+                    // Just mark those blocks as free
+                    this.#markFree(alloc.startBlock + newBlockCount, alloc.startBlock + alloc.blocks - 1);
+                }
+                alloc.bytes = size;
+                alloc.blocks = newBlockCount;
                 return address;
             } else {
                 if (newBlockCount > alloc.blocks) {
@@ -341,7 +357,7 @@ export function free(ptr) {
 }
 
 export function postInstantiate(instance) {
-    heap = new JsHeap(memory, instance.exports.__heap_base);
+    heap = new JsHeap(memory, instance.exports.__heap_base + getStaticHeapSize());
 }
 
 export default function configure(imports, settings) {
