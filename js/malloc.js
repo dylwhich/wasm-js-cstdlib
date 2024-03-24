@@ -41,7 +41,7 @@ class JsHeap {
         this.heap_base = heap_base;
 
         // Set start to the next 256-byte alignment point after the heap base
-        this.start = ((heap_base + BLOCK_SIZE - 1) / BLOCK_SIZE) | 0;
+        this.start = ((heap_base + BLOCK_SIZE - 1) / BLOCK_SIZE |0) * BLOCK_SIZE | 0;
         this.top = this.start;
 
         // All HeapBlocks of memory that have been allocated

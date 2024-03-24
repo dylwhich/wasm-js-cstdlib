@@ -15,6 +15,10 @@ const utfDecoder = new TextDecoder("utf-8");
 const utfEncoder = new TextEncoder("utf-8");
 const utf16Decoder = new TextDecoder("utf-16");
 
+let heapOffset = 0;
+
+let heapBase = undefined;
+
 export const endian = (() => {
     const buffer = new ArrayBuffer(2);
     new DataView(buffer).setInt16(0, 256, true /* littleEndian */);
@@ -37,6 +41,10 @@ export default function configure(imports, settings) {
     HEAPU64 = new BigUint64Array(memory.buffer);
     HEAPF32 = new Float32Array(memory.buffer);
     HEAPF64 = new Float64Array(memory.buffer);
+}
+
+export function postInstantiate(instance) {
+    heapBase = instance.exports.__heap_base;
 }
 
 export function hexdump(ptr, length=8) {
@@ -131,8 +139,12 @@ export function getPtrAligned(addr, align) {
     return new DataView(membuf, aligned);
 }
 
+export function getMemView(addr, len) {
+    return new DataView(membuf, addr, len);
+}
+
 export function getArrInt8(ptr, len) {
-    return HEAP8.subarray(ptr, len);
+    return HEAP8.subarray(ptr, ptr + len);
 }
 
 export function getPtrInt8(ptr) {
@@ -140,7 +152,7 @@ export function getPtrInt8(ptr) {
 }
 
 export function getArrUint8(ptr, len) {
-    return HEAPU8.subarray(ptr, len);
+    return HEAPU8.subarray(ptr, ptr + len);
 }
 
 export function getPtrUint8(ptr) {

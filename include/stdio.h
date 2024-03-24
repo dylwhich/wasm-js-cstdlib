@@ -11,20 +11,17 @@
 #define SEEK_END 2
 #define F_OK 0
 
-typedef struct
-{
-    uint8_t* data;
-    size_t offset;
-    size_t size;
-    char mode[8];
-    char name[256];
-} FILE;
+typedef int FILE;
 
 typedef long fpos_t;
 
 extern FILE *stdin;
 extern FILE *stdout;
 extern FILE *stderr;
+
+#define stdin stdin
+#define stdout stdout
+#define stderr stderr
 
 int printf(const char* format, ...);
 int fprintf(FILE* stream, const char* format, ...);

@@ -7,6 +7,7 @@
 
 // Internal, but still needs to be configured
 import * as pointers from "./util/pointers.js";
+import * as asyncify from "./util/asyncify.js";
 
 // Header implementations
 import assertConfig from "./assert.js";
@@ -16,7 +17,7 @@ import mallocConfig, { postInstantiate as mallocPostInst } from "./malloc.js";
 import mathConfig from "./math.js";
 import stdargConfig from "./stdarg.js";
 import stddefConfig from "./stddef.js";
-import stdioConfig from "./stdio.js";
+import stdioConfig, { postInstantiate as stdioPoistInst } from "./stdio.js";
 import stdlibConfig from "./stdlib.js";
 import stringConfig from "./string.js";
 import sys_typesConfig from "./sys/types.js";
@@ -26,14 +27,39 @@ import unistdConfig from "./unistd.js";
 
 const baseConf = {
     filesystem: {
-        "/": {
-            type: "localstorage",
-            flags: ["rw"],
-        },
+        "/screenshot.*\\.png": [
+            {
+                type: "download",
+                flags: ["wo"],
+            }
+        ],
+        "/": [
+            {
+                // Try a plain old HTTP GET to the server root
+                type: "http",
+                base: "//",
+                flags: ["ro"],
+            }, {
+                // Write any changes
+                type: "localstorage",
+                flags: ["rw"],
+            }
+        ],
     },
 }
 
+export function makeArgv() {
+    // argv is an array of
+    let argv = new Uint32Array(arguments.length);
+}
+
 export function postInstantiate(instance) {
+    asyncify.postInstantiate(instance);
+    pointers.postInstantiate(instance);
+
+    stdioPoistInst(instance);
+
+    // malloc goes last so any extra memory is already finalized
     // Hand __heap_base to malloc()
     // - Note: it must be exported with -Wl,--export=__heap_base
     mallocPostInst(instance);
@@ -54,6 +80,7 @@ export default function configure(imports, settings) {
 
     const origKeyCount = Object.keys(imports.env).length;
 
+    asyncify.default(imports, settings);
     pointers.default(imports, settings);
 
     // Configure each module

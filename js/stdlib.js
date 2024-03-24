@@ -17,11 +17,11 @@ export function atol(nptr) {
 }
 
 export function atoll(nptr) {
-
+    return parseInt(nptr);
 }
 
 export function getenv(name) {
-
+    return 0;
 }
 
 export function qsort(name) {

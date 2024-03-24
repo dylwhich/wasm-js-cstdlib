@@ -1,7 +1,7 @@
 TERSER?=uglifyjs
 TERSERFLAGS = -d RAWDRAW_USE_LOOP_FUNCTION=false -d RAWDRAW_NEED_BLITTER=true
 
-SOURCES = src/main.c
+SOURCES = src/main.c ../src/shim.c
 DEFINES = -DCOOL
 
 CC_WASM = clang
