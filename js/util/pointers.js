@@ -47,6 +47,28 @@ export function postInstantiate(instance) {
     heapBase = instance.exports.__heap_base;
 }
 
+export function allocStaticHeap(sz, align) {
+    if (heapBase == "undefined") {
+        console.error("Can't allocate static heap memory")
+        return -1;
+    }
+
+    // make sure the heap is aligned as requested
+    if ((heapBase + heapOffset) % (align) != 0) {
+        heapOffset += (align - (heapBase + heapOffset) % align);
+    }
+
+    const result = heapBase + heapOffset;
+    // Adance the heap offset by
+    heapOffset += sz;
+    console.log("Allocated %o static heap bytes", sz);
+    return result;
+}
+
+export function getStaticHeapSize() {
+    return heapOffset;
+}
+
 export function hexdump(ptr, length=8) {
     let paddedAddr = parseInt(ptr).toString(16);
     while (paddedAddr.length < 8) {
@@ -121,6 +143,7 @@ export function newStrBuf(str) {
     }
     result[str.length] = 0;
 }
+
 
 export function writeStr(dst, str) {
     // SLICE: Returns a copy

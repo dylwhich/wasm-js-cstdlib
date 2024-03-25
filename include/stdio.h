@@ -61,5 +61,9 @@ size_t fread(void* ptr, size_t size, size_t nmemb, FILE* stream);
 size_t fwrite(const void* ptr, size_t size, size_t nmemb, FILE* stream);
 int fflush(FILE* stream);
 
+int feof(FILE* stream);
+int ferror(FILE* stream);
+void clearerr(FILE* stream);
+
 int remove(const char* pathname);
 int access(const char* pathname, int mode);

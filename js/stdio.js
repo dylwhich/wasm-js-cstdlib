@@ -1,11 +1,16 @@
 import { getStr, getWideStr, writeStr, getMemView, getArrUint8, hexdump, getPtrAligned, endian, allocStaticHeap, getArrUint32 } from './util/pointers.js'
-import { asyncSuspend, asyncCancel, asyncResume } from './util/asyncify.js';
+import { asyncSuspend, asyncCancel, asyncResume, wrapPromise } from './util/asyncify.js';
 
 export const EOF = -1;
 export const F_OK = 0;
 export const SEEK_SET = 0;
 export const SEEK_CUR = 1;
 export const SEEK_END = 2;
+
+export const BUFSIZ = 8192;
+
+const utf8Decoder = new TextDecoder("utf-8");
+const utf8Encoder = new TextEncoder("utf-8");
 
 class ArgInfo {
     constructor(type, width, view) {
@@ -112,6 +117,7 @@ class FileMode {
 
     #create;
     #truncate;
+    #binary;
 
     constructor(modeStr) {
         let read = false;
@@ -124,6 +130,8 @@ class FileMode {
 
         let create = false;
         let trunc = false;
+
+        let binary = false;
 
         for (const char of Object.values(modeStr)) {
             switch (char) {
@@ -139,7 +147,7 @@ class FileMode {
                     break;
 
                 case 'b':
-                    // ignored
+                    binary = true;
                     break;
 
                 case 'r':
@@ -188,6 +196,7 @@ class FileMode {
         this.#writePos = writePos;
         this.#create = create;
         this.#truncate = trunc;
+        this.#binary = binary;
     }
 
     get read() {
@@ -212,6 +221,10 @@ class FileMode {
 
     get truncate() {
         return this.#truncate;
+    }
+
+    get binary() {
+        return this.#binary;
     }
 
     // Check if this mode is compatible with the given fs read/write capabilities
@@ -325,29 +338,33 @@ class LocalStorageFs extends JsFs {
     #getWriteStream(path) {
         return function(path){
             // idk make up a byte length
-            let buf = new ArrayBuffer(8, {maxByteLength: 32768});
+            // resizable arraybuffer support is experimental in like, just firefox...
+            const supportsResize = ("undefined" != (new ArrayBuffer(2, {maxByteLength: 4}).resizable));
+            const buf = new ArrayBuffer(supportsResize ? 32768 : 8, {maxByteLength: 32768});
+            const bview = new DataView(buf);
             let offset = 0;
             return new WritableStream({
                 write(chunk) {
                     return new Promise((resolve, reject) => {
                         // chunk should be a Uint8Array
-                        while (offset + chunk.length > buf.length) {
-                            buf.resize(offset + chunk.length);
+                        if (offset + chunk.byteLength > buf.byteLength) {
+                            console.debug("Resizing buffer to size %s", offset + chunk.byteLength);
+                            buf.resize(offset + chunk.byteLength);
                         }
 
                         // do an awful slow thing
-                        for (let i = 0; i < chunk.length; i++) {
-                            buf[offset + i] = chunk[i];
+                        for (let i = 0; i < chunk.byteLength; i++) {
+                            bview.setUint8(offset + i, chunk[i]);
                         }
-                        offset += chunk.length;
 
+                        offset += chunk.byteLength;
                         resolve();
                     });
                 },
                 close() {
                     // Actually write the item
                     console.debug("Writing %s bytes to localStorage@%s", offset, path);
-                    localStorage.setItem(path, utf8Encoder.encode(buf.slice(0, offset)));
+                    localStorage.setItem(path, utf8Decoder.decode(new Uint8Array(buf, 0, offset|0)));
                 },
                 abort(err) {
                     console.error("Stream error", err);
@@ -377,7 +394,7 @@ class LocalStorageFs extends JsFs {
     }
 
     open(path, mode) {
-        console.log("localStorage.open(%o, %o)", path, mode);
+        console.debug("localStorage.open(%o, %o)", path, mode);
         return new Promise((resolve, reject) => {
             let item = localStorage.getItem(path);
             if (item !== null || (mode.write && mode.create)) {
@@ -405,7 +422,7 @@ class LocalStorageFs extends JsFs {
                     anyFound = true;
                     const lastSlash = key.indexOf("/", path.length);
                     const trimmed = key.substring(path.length, (lastSlash === -1) ? undefined : lastSlash);
-                    console.log("%s + %s --> %s", key, path, trimmed);
+                    console.debug("%s + %s --> %s", key, path, trimmed);
 
                     if (!result.includes(trimmed)) {
                         result.push(trimmed);
@@ -515,21 +532,17 @@ let fsConfig = {};
 // the JS instances, indexed by file descriptor
 const fsInstances = {};
 
-// some wasm memory allocated for file streams
-// Uint32Array
-let fds;
+// A real wasm memory buffer
+let internalBuffer;
 
 function registerFile(handle) {
-    console.log("Registered file %o to fd=%o", handle, curFd);
+    console.debug("Registered file %o to fd=%o", handle, curFd);
     FILES[curFd] = handle;
-    //fds[curFd] = curFd|0;
-    //hexdump(fds.byteOffset, 64);
     return curFd++;
 }
 
 function unregisterFile(fd) {
     FILES[fd] = undefined;
-    //fds[fd] = 0xFFFFFFFF|0;
 }
 
 function normalizePath(path) {
@@ -567,7 +580,7 @@ function initFilesystems(fsConfs) {
         }
     }
 
-    console.log("fsInstances", fsInstances);
+    console.debug("fsInstances", fsInstances);
 }
 
 // Find the appropriate filesystem for the path+mode
@@ -640,16 +653,16 @@ export function fopen(pathname, mode) {
 
         console.debug("fopen(%s, %o)", pathStr, parsedMode);
         const filesystems = getFilesystems(pathStr, parsedMode);
-        console.log(filesystems);
+        console.debug(filesystems);
 
 
         const search = [...filesystems.values()];
-        console.log("search=%o", search);
+        console.debug("search=%o", search);
         const promises = search.map((val) => {
-            console.log("val=%o\n", val);
+            console.debug("val=%o\n", val);
             if (val.fs) {
                 let promise = val.fs.open(val.path, parsedMode);
-                console.log("promise=%o", promise);
+                console.debug("promise=%o", promise);
                 return promise;
             } else {
                 return Promise.resolve();
@@ -659,33 +672,33 @@ export function fopen(pathname, mode) {
 
         Promise.all(promises).then((results) => {
             let out = null;
-            console.log("Got all results %o", results);
+            console.debug("Got all results %o", results);
             for (let i = 0; i < results.length; i++) {
                 if (results[i]) {
                     out = results[i];
-                    console.log("found %o in loop", out);
+                    console.debug("found %o in loop", out);
                     break;
                 } else {
-                    console.log("results[%o] is false?? %o", i, results[i]);
+                    console.debug("results[%o] is false?? %o", i, results[i]);
                 }
             }
 
             if (out) {
-                console.log("found %o", out);
+                console.debug("found %o", out);
             } else {
-                console.log("didn't find");
+                console.debug("didn't find");
             }
 
             return out;
         }).then((res) => {
-            console.log("aaaa, %o", res);
+            console.debug("aaaa, %o", res);
             fopenRes = registerFile(res);
             asyncResume();
         });
 
     } else {
         // do something with result?? return?
-        console.log("handle is now %o", fopenRes);
+        console.debug("handle is now %o", fopenRes);
         const ret = fopenRes;
         fopenRes = null;
         return ret;
@@ -697,23 +710,23 @@ export function fclose(stream) {
 
     if (handle) {
         if (handle.readStream) {
-            console.log("closing readStream? %o", handle.readStream);
+            console.debug("closing readStream? %o", handle.readStream);
             if (handle.readStream.locked) {
-                console.log("not closing bc it's locked!");
+                console.debug("not closing bc it's locked!");
             } else {
-                console.log("cancel=%o", handle.readStream.cancel());
+                console.debug("cancel=%o", handle.readStream.cancel());
             }
         }
 
         if (handle.writeStream) {
-            console.log("closing writeStream? %o", handle.writeStream);
+            console.debug("closing writeStream? %o", handle.writeStream);
             if (handle.writeStream.locked) {
                 handle.writer.close().then((x) => {
-                    console.log("x: %o", x);
+                    console.debug("x: %o", x);
                 }).catch((err) => { console.error("writeStream.close(): %o", err);});
             } else {
                 handle.writeStream.close().then(() => {
-                    console.log("Closed! in the background...");
+                    console.debug("Closed! in the background...");
                 });
             }
         }
@@ -725,19 +738,19 @@ export function fclose(stream) {
 }
 
 export function fseek(stream, offset, whence) {
-
+    // TODO
 }
 
 export function ftell(stream) {
-
+    // TODO
 }
 
 export function rewind(stream) {
-    // TODO
-
+    // TODO can't exactly rewind streams so we should just remake the stream
+    // so, a file handle needs a way to do that as we have no way of knowing where it came from here (nor should we need to know!)
 }
 
-export function feof(strem) {
+export function feof(stream) {
     const handle = FILES[stream];
     if (handle) {
         return handle.eof;
@@ -763,9 +776,10 @@ export function clearerr(stream) {
     }
 }
 
+// Wrap a readable stream in a stream that supports BYOB reads
+// we need this for variable sized reads, as fread uses
 function wrapReadable(read) {
     return function(r) {
-        console.log("Wrapping %o", r);
         return new ReadableStream({
             type: "bytes",
             start(controller) {
@@ -773,12 +787,10 @@ function wrapReadable(read) {
                     r.read().then(({ done, value }) => {
                         if (value) {
                             controller.enqueue(value);
-                            console.log("PUSHED value is %o", value);
                         }
 
                         if (done) {
                             controller.close();
-                            console.log("can i close %o", r);
                         } else {
                             push();
                         }
@@ -789,103 +801,6 @@ function wrapReadable(read) {
             },
         });
     }(read);
-}
-
-function _wrapReadable(read) {
-    return function(r) {
-        let buffer = new ArrayBuffer(16, { maxByteLength: 1024 * 1024 * 1024 });
-        let bytes = new Uint8Array(buffer);
-        // view onto the unused portion of the buffer
-        let bufView = new DataView(buffer, 0, 0);
-        let count = 0;
-        let read = 0;
-        let readAll = false;
-
-        return new ReadableStream({
-            type: "bytes",
-            start(controller) {
-
-            },
-
-            async pull(controller) {
-                const view = controller.byobRequest.view;
-                let written = 0;
-                let start = bufView.byteOffset;
-                let len = bufView.byteLength;
-
-                if (!readAll && bufView.byteLength < view.byteLength) {
-                    const newData = await r.read();
-                    if (newData.done) {
-                        readAll = true;
-                        console.log("Done!");
-                        controller.close();
-                    }
-                    console.log(newData);
-
-                    // if the buffer is completely empty, make sure to move it to the start
-                    if (len == 0) {
-                        start = 0;
-                    }
-
-                    if (newData.value) {
-                        // Create a new view, big enough for all the old+new data
-                        len += newData.value.byteLength;
-                        bufView = new DataView(buffer, start, len);
-
-                        // Copy the data into the new part of the view
-                        for (let i = 0; i < newData.value.byteLength; i++) {
-                            bufView[start + i] = newData[i];
-                        }
-                    }
-                }
-
-                // Write the data now, wherever it came from
-                for (; written < view.byteLength && written < len; written++) {
-                    view[written] = bufView[written];
-                }
-
-                console.log("wrote %d to view %o", written, view);
-
-                console.log("moving buf from off=%o, len=%o to off=%o, len=%o, written=%o",
-                            start, len, start + written, len - written, written);
-
-
-                bufView = new DataView(buffer, start + written, len - written);
-
-                controller.byobRequest.respond(written);
-            }
-        });
-    }(read);
-}
-
-
-// returns a stream
-function wrapReader(reader) {
-    return function(r) {
-        return new ReadableStream({
-            type: "bytes",
-            start(controller) {
-                // The following function handles each data chunk
-                function push() {
-                    // "done" is a Boolean and value a "Uint8Array"
-                    r.read().then(({ done, value }) => {
-                        // If there is no more data to read
-                        console.log("done=%o, value=%o", done, value);
-                        if (done) {
-                            controller.close();
-                            return;
-                        }
-                        // Get the data and send it to the browser via the controller
-                        controller.enqueue(value);
-                        // Check chunks by logging to the console
-                        console.log(done, value);
-                        push();
-                    });
-                }
-                push();
-            },
-        });
-    }(reader);
 }
 
 let freadLen = undefined;
@@ -929,14 +844,14 @@ export function fread(ptr, size, nmemb, stream) {
                             handle.reader.unl
                             handle.reader.closed.then(() => {
                                 handle.eof = true;
-                                console.log("locked?????", handle.reader.locked);
+                                console.debug("locked?????", handle.reader.locked);
                                 asyncResume();
                             }).catch((err) => {
                                 console.error("err on reader.closed()! %o", err);
                                 asyncResume();
                             });
                         } else {
-                            console.log("Unexpectedly done???");
+                            console.debug("Unexpectedly done???");
                             handle.eof = true;
                             asyncResume();
                         }
@@ -977,17 +892,19 @@ export function fwrite(ptr, size, nmemb, stream) {
         const handle = FILES[stream];
 
         if (handle) {
-            console.log("writing... %o to %o", getArrUint8(ptr, (size * nmemb)), handle);
+            const arr = getArrUint8(ptr, (size * nmemb));
+            console.debug("writing... %o to %o (%s)", arr, handle, getStr(ptr));
             if (handle.writeStream) {
-                console.log("writer: %o", handle.writer);
-                handle.writer.write(getArrUint8(ptr, (size * nmemb))).then(
+                console.debug("writer: %o", handle.writer);
+                handle.writer.write(arr).then(
                     (res) => {
+                        console.debug("written, res => %o", res);
                         fwriteLen = (size * nmemb);
                         handle.writePos += fwriteLen;
                         asyncResume();
                     }
                 ).catch((err) => {
-                    console.log("Write error: %o", err);
+                    console.debug("Write error: %o", err);
                     fwriteLen = -1;
                     asyncResume();
                 });
@@ -1136,7 +1053,7 @@ function jsSprintf(cStr, varargs) {
 }
 
 export function snprintf(buf, size, str, varargs) {
-    result = jsSprintf(str, varargs);
+    let result = jsSprintf(str, varargs);
     // trim the string if too long
     if (size != -1 && result.length + 1 > size)
     {
@@ -1165,7 +1082,56 @@ export function printf(str, varargs) {
     let result = jsSprintf(str, varargs);
     //stdoutFile.writeStream
     console.log(result);
+
     return result.length;
+}
+
+async function jsFwrite(ptr, size, nmemb, stream) {
+    const handle = FILES[stream];
+
+    if (handle) {
+        const arr = getArrUint8(ptr, (size * nmemb));
+        console.debug("[async] jsFwrite(%d, %d, %d) writing... %o to %o (%s)", ptr, size, nmemb, arr, handle, getStr(ptr));
+        if (handle.writeStream) {
+            console.debug("writer: %o", handle.writer);
+
+            try {
+                await handle.writer.write(arr);
+                let writeLen = (size * nmemb);
+                handle.writePos += writeLen;
+                return writeLen;
+            } catch (err) {
+                console.error("[async] Write error: %o", err);
+                handle.err = true;
+                return -1;
+            }
+        } else {
+            console.error("[async] Handle not writable %o", handle);
+            // cancel because we're not actually going to do a promise
+            return -1;
+        }
+    } else {
+        console.error("[async] ??? file not found? handle is %o / stream is %o", handle, stream);
+        return -1;
+    }
+}
+
+export function fprintf(stream, str, varargs) {
+    return wrapPromise(() => {
+        return new Promise((resolve, reject) => {
+            let result = jsSprintf(str, varargs);
+            // trim the string if too long
+            if (result.length > BUFSIZ)
+            {
+                result = result.substring(0, BUFSIZ);
+            }
+            writeStr(internalBuffer, result);
+            jsFwrite(internalBuffer.byteOffset, 1, result.length, stream).then((res) => {
+                console.debug("resolving jsFwrite(%s(%o)) --> %o", result, internalBuffer, res);
+                resolve(res);
+            }).catch(reject);
+        });
+    });
 }
 
 export function putchar(charValue) {
@@ -1199,7 +1165,7 @@ function setupStandardStreams(settings) {
     if (settings.stdout && typeof(settings.stdout) === "function") {
         stdoutFile = new FileHandle(undefined, new WritableStream({
             write(chunk) {
-                settings.stdout(chunk);
+                settings.stdout(utf8Decoder.decode(chunk));
             },
             close() {
                 console.warn("stdout closed");
@@ -1211,7 +1177,7 @@ function setupStandardStreams(settings) {
     } else {
         stdoutFile = new FileHandle(undefined, new WritableStream({
             write(chunk) {
-                console.log("STDOUT >>> ", chunk);
+                console.log("STDOUT >>> ", utf8Decoder.decode(chunk));
             },
             close() {
                 console.warn("stdout closed");
@@ -1225,7 +1191,7 @@ function setupStandardStreams(settings) {
     if (settings.stderr && typeof(settings.stder) === "function") {
         stderrFile = new FileHandle(undefined, new WritableStream({
             write(chunk) {
-                settings.stderr(chunk);
+                settings.stderr(utf8Decoder.decode(chunk));
             },
             close() {
                 console.warn("stderr closed");
@@ -1237,7 +1203,7 @@ function setupStandardStreams(settings) {
     } else {
         stderrFile = new FileHandle(undefined, new WritableStream({
             write(chunk) {
-                console.error("STDERR >>> ", chunk);
+                console.error("STDERR >>> %s", utf8Decoder.decode(chunk));
             },
             close() {
                 // don't do that
@@ -1251,9 +1217,10 @@ function setupStandardStreams(settings) {
 }
 
 export function postInstantiate(instance) {
-    console.log(instance.exports);
+    console.info(instance.exports);
 
     //fds = getArrUint32(allocStaticHeap(512 * 4, 4), 512 * 4);
+    internalBuffer = getArrUint8(allocStaticHeap(BUFSIZ, 16), BUFSIZ);
 
     // stdin (0)
     //stdin.value = (fds.byteOffset) + registerFile(stdinFile) * 4;
@@ -1277,12 +1244,12 @@ export default function configure(imports, settings) {
     initFilesystems(fsConfig);
     setupStandardStreams(settings);
 
-    //console.log("imported stdin=%o", imports.env.stdin);
-    //console.log("imported stdout=%o", imports.env.stdout);
-    //console.log("imported stderr=%o", imports.env.stderr);
+    //console.debug("imported stdin=%o", imports.env.stdin);
+    //console.debug("imported stdout=%o", imports.env.stdout);
+    //console.debug("imported stderr=%o", imports.env.stderr);
 
     imports.env.printf = printf;
-    //imports.env.fprintf = fprintf;
+    imports.env.fprintf = fprintf;
     imports.env.snprintf = snprintf;
     imports.env.sprintf = sprintf;
     imports.env.putchar = putchar;
@@ -1292,6 +1259,7 @@ export default function configure(imports, settings) {
     imports.bynsyncify.fopen = fopen;
     imports.bynsyncify.fwrite = fwrite;
     imports.bynsyncify.fread = fread;
+    imports.bynsyncify.fprintf = fprintf;
 
     // Basic file functions
     imports.env.fopen = fopen;

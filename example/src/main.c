@@ -40,11 +40,11 @@ int __attribute__((export_name("main"))) main(int argc, char** argv) {
 
     FILE* fl = fopen("nvs.json", "w+");
     printf("Opened file f1=%p\n", fl);
-    size_t out = fwrite("hello world", 12, 1, fl);
+    size_t out = fwrite("{\"test\": \"hello world\"}", 23, 1, fl);
     printf("Wrote %zu bytes\n", out);
     fclose(fl);
 
-    fwrite("ahoy stdout", 12, 1, stdout);
+    fwrite("ahoy stdout", 1, 11, stdout);
 
     stdin = (FILE*)0;
     stdout = (FILE*)1;
@@ -55,6 +55,9 @@ int __attribute__((export_name("main"))) main(int argc, char** argv) {
     printf("stdout=%p", stdout);
     printf("stderr=%p", stderr);
 
+    int fprintflen = fprintf(stderr, "Testing fprintf! Pi is %.3f, a string=%s\n", 3.14159265, "wooooo");
+    printf("fprintflen=%d\n", fprintflen);
+
     FILE* txt = fopen("spiffs_image/test.txt", "r");
     const int chunk = 3;
     char buf[1024];
@@ -63,7 +66,9 @@ int __attribute__((export_name("main"))) main(int argc, char** argv) {
     while (chunk == (read = fread(buf + off, 1, chunk, txt))) {
         off += read;
         printf("read %d chars\n", read);
+        printf("feof() == %d", feof(txt));
     }
+    printf("feof() == %d", feof(txt));
 
     printf("total chars read %d", off);
     buf[off] = '\0';
@@ -72,7 +77,6 @@ int __attribute__((export_name("main"))) main(int argc, char** argv) {
     fclose(txt);
 
     printf("~~~~~~~~~~");
-
 
     /*FILE* f4 = fopen("nvs.json", "w");
     printf("we actually returned from fopen()\n");
