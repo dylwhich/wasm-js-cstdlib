@@ -46,14 +46,10 @@ int __attribute__((export_name("main"))) main(int argc, char** argv) {
 
     fwrite("ahoy stdout", 1, 11, stdout);
 
-    stdin = (FILE*)0;
-    stdout = (FILE*)1;
-    stderr = (FILE*)2;
-
     printf("ok\n");
-    printf("stdin=%p", stdin);
-    printf("stdout=%p", stdout);
-    printf("stderr=%p", stderr);
+    printf("stdin=%p\n", stdin);
+    printf("stdout=%p\n", stdout);
+    printf("stderr=%p\n", stderr);
 
     int fprintflen = fprintf(stderr, "Testing fprintf! Pi is %.3f, a string=%s\n", 3.14159265, "wooooo");
     printf("fprintflen=%d\n", fprintflen);
@@ -66,17 +62,27 @@ int __attribute__((export_name("main"))) main(int argc, char** argv) {
     while (chunk == (read = fread(buf + off, 1, chunk, txt))) {
         off += read;
         printf("read %d chars\n", read);
-        printf("feof() == %d", feof(txt));
+        printf("feof() == %d\n", feof(txt));
     }
-    printf("feof() == %d", feof(txt));
+    printf("feof() == %d\n", feof(txt));
 
-    printf("total chars read %d", off);
+    printf("total chars read %d\n", off);
     buf[off] = '\0';
 
     printf("Buf: %s\n", buf);
     fclose(txt);
 
-    printf("~~~~~~~~~~");
+    printf("~~~~~~~~~~\n");
+    printf("multiple\nlines\nwhat\nhappens\nhere?\n");
+
+    putchar('P');
+    fputc('U', stdout);
+    putchar('T');
+    putc('C', stderr);
+    putchar('H');
+    putchar('A');
+    putchar('R');
+    putchar('\n');
 
     /*FILE* f4 = fopen("nvs.json", "w");
     printf("we actually returned from fopen()\n");
@@ -88,6 +94,7 @@ int __attribute__((export_name("main"))) main(int argc, char** argv) {
 
     FILE* f3 = fopen("screenshot-123456789.png", "w");
     fclose(f3);*/
+
 
     return 0;
 }

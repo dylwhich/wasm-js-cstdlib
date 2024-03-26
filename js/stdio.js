@@ -476,8 +476,6 @@ class HttpJsFs extends JsFs {
     }
 
     list(path) {
-        // TODO: Scrape basic HTML directory listings
-        // Should be real straightforward for a browser
         return fetch(path).then((response) => {
             if (response.ok) {
                 return response.text;
@@ -488,12 +486,12 @@ class HttpJsFs extends JsFs {
             if (text) {
                 const entries = [];
                 const parser = new DOMParser();
-                const doc = parser.parseFromString(response.body.getReader)
+                const doc = parser.parseFromString(text);
 
                 doc.querySelectorAll("a[href]").forEach((link) => {
                     const href = link.getAttribute("href");
                     if (href.match(/\//g).length < 2) {
-                        // less than 2 slashes, we're probably good
+                        // less than 2 slashes, we're probably good to include it
                         entries.push(href);
                     }
                 });
@@ -513,11 +511,6 @@ class HttpJsFs extends JsFs {
 
 // all open files
 const FILES = [];
-
-// file handle versions of
-export const stdin = new WebAssembly.Global({value: "i32", mutable: true}, 0|0);
-export const stdout = new WebAssembly.Global({value: "i32", mutable: true}, 1|0);
-export const stderr = new WebAssembly.Global({value: "i32", mutable: true}, 2|0);
 
 // file versions of stdin/stdout/stderr
 let stdinFile = null;
@@ -637,10 +630,6 @@ function getFilesystems(path, mode) {
 
     return result;
 }
-
-/*function resolveFile(sources) {
-    return
-}*/
 
 let fopenRes = null;
 export function fopen(pathname, mode) {
@@ -1079,11 +1068,26 @@ export function sprintf(buf, str, varargs) {
 }
 
 export function printf(str, varargs) {
-    let result = jsSprintf(str, varargs);
-    //stdoutFile.writeStream
-    console.log(result);
+    return fprintf(1, str, varargs);
+}
 
-    return result.length;
+async function jsFputc(char, stream) {
+    const handle = FILES[stream];
+
+    if (handle) {
+        if (handle.writeStream) {
+            internalBuffer[0] = (char & 0xFF);
+            try {
+                await handle.writer.write(new DataView(memory, internalBuffer.offset, 1));
+                return 1;
+            } catch (err) {
+                console.error("jsFputc(char, stream)")
+                return -1;
+            }
+        }
+    } else {
+        return -1;
+    }
 }
 
 async function jsFwrite(ptr, size, nmemb, stream) {
@@ -1134,18 +1138,32 @@ export function fprintf(stream, str, varargs) {
     });
 }
 
+export function fputc(c, stream) {
+    internalBuffer[0] = ((c|0) & 0xFF);
+    return fwrite(internalBuffer.byteOffset, 1, 1, stream);
+}
+
 export function putchar(charValue) {
-    if (charValue >= 0x20 && charValue <= 0x7F) {
-        console.log(String.fromCharCode(charValue));
-    } else {
-        console.log("\\x%s", charValue.toString(16));
-    }
-    return charValue;
+    return fputc(charValue, 1);
 }
 
 export function puts(strPointer) {
-    console.log(getStr(strPointer));
-    return 1;
+    return wrapPromise(() => {
+        return new Promise((resolve, reject) => {
+            jsFwrite(strPointer, 1, getStr(strPointer).length, 1).then((res) => {
+                if (res >= 0) {
+                    jsFputc(10|0, 1).then((res) => {
+                        resolve(res);
+                    });
+                } else {
+                    resolve(-1);
+                }
+                resolve(res);
+            }).catch((err) => {
+                resolve(-1);
+            });
+        });
+    });
 }
 
 function setupStandardStreams(settings) {
@@ -1223,19 +1241,16 @@ export function postInstantiate(instance) {
     internalBuffer = getArrUint8(allocStaticHeap(BUFSIZ, 16), BUFSIZ);
 
     // stdin (0)
-    //stdin.value = (fds.byteOffset) + registerFile(stdinFile) * 4;
     registerFile(stdinFile);
-    console.debug("stdin=%o (%o)", stdinFile, stdin.value);
+    console.debug("stdin=%o", stdinFile);
 
     // stdout (1)
-    //stdout.value = (fds.byteOffset) + registerFile(stdoutFile) * 4;
     registerFile(stdoutFile);
-    console.debug("stdout=%o (%o)", stdoutFile, stdout.value);
+    console.debug("stdout=%o", stdoutFile);
 
     // stderr (2)
-    //stderr.value = (fds.byteOffset) + registerFile(stderrFile) * 4;
     registerFile(stderrFile);
-    console.debug("stderr=%o (%o)", stderrFile, stderr.value);
+    console.debug("stderr=%o", stderrFile);
 }
 
 export default function configure(imports, settings) {
@@ -1260,12 +1275,19 @@ export default function configure(imports, settings) {
     imports.bynsyncify.fwrite = fwrite;
     imports.bynsyncify.fread = fread;
     imports.bynsyncify.fprintf = fprintf;
+    imports.bynsyncify.printf = printf;
+    imports.bynsyncify.puts = puts;
+    imports.bynsyncify.fputc = fputc;
+    imports.bynsyncify.putc = fputc;
+    imports.bynsyncify.putchar = putchar;
 
     // Basic file functions
     imports.env.fopen = fopen;
     imports.env.fwrite = fwrite;
     imports.env.fread = fread;
     imports.env.fclose = fclose;
+    imports.env.fputc = fputc;
+    imports.env.putc = fputc;
 
     // File handle info functions
     imports.env.ftell = ftell;

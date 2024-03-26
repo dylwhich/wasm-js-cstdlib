@@ -329,6 +329,19 @@ import("../js/main.js").then(function(stdlib) {
 				type: "localstorage",
 				flags: ["rw"],
 			} ],
+		},
+		stdout: function(str) {
+			let stdout = document.getElementById("stdout");
+			if (!stdout) {
+				stdout = document.createElement("pre");
+				stdout.setAttribute("id", "stdout");
+
+				stdout.innerText = str;
+				stdout.style.color = "#ffffff";
+
+				document.body.appendChild(stdout);
+			}
+			stdout.innerText += str;
 		}
 	});
 
