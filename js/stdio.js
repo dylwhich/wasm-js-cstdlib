@@ -1078,10 +1078,10 @@ async function jsFputc(char, stream) {
         if (handle.writeStream) {
             internalBuffer[0] = (char & 0xFF);
             try {
-                await handle.writer.write(new DataView(memory, internalBuffer.offset, 1));
+                await handle.writer.write(new DataView(memory.buffer, internalBuffer.offset, 1));
                 return 1;
             } catch (err) {
-                console.error("jsFputc(char, stream)")
+                console.error("jsFputc(char, stream) err: %o", err);
                 return -1;
             }
         }
