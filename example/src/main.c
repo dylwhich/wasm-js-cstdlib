@@ -95,6 +95,14 @@ int __attribute__((export_name("main"))) main(int argc, char** argv) {
     FILE* f3 = fopen("screenshot-123456789.png", "w");
     fclose(f3);*/
 
+    printf("memcmp(textA, textB) == %d\n", memcmp(textA, textB, 7));
+    printf("memcmp(textB, textA) == %d\n", memcmp(textB, textA, 7));
+
+    const char h[] = "hello";
+    const char hw[] = "hello world";
+    printf("strcmp(hello, hello world) == %d\n", strcmp(h, hw));
+    printf("strncmp(hello, hello world, 5) == %d\n", strncmp(h, hw, 5));
+    printf("strncmp(hello, hello world, 6) == %d\n", strncmp(h, hw, 6));
 
     return 0;
 }

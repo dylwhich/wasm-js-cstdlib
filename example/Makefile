@@ -12,9 +12,13 @@ CFLAGS_WASM = \
 	-flto -Oz \
 	-Wl,--lto-O3 \
 	-Wl,--no-entry \
-	-Wl,--allow-undefined \
 	-Wl,--import-memory \
-	-Wl,--export=__heap_base
+	-Wl,--allow-undefined \
+	-Wl,--export=__heap_base \
+	-Wl,--export-table \
+	-Wl,--warn-unresolved-symbols
+#	-Wl,--print-map
+#	-Wl,--import-undefined \
 
 CFLAGS_WASM += \
 	-nostdlib \

@@ -12,6 +12,7 @@ char* strchr(const char* s, int c);
 char* strrchr(const char* s, int c);
 int strcmp(const char* s1, const char* s2);
 char* strcpy(char* dst, const char* src);
+char* stpcpy(char* dst, const char* src);
 char* strdup(const char* src);
 size_t strlen(const char* str);
 int strcasecmp(const char* s1, const char* s2);

@@ -17,7 +17,7 @@ import mallocConfig, { postInstantiate as mallocPostInst } from "./malloc.js";
 import mathConfig from "./math.js";
 import stdargConfig from "./stdarg.js";
 import stddefConfig from "./stddef.js";
-import stdioConfig, { postInstantiate as stdioPoistInst } from "./stdio.js";
+import stdioConfig, { postInstantiate as stdioPostInst } from "./stdio.js";
 import stdlibConfig from "./stdlib.js";
 import stringConfig from "./string.js";
 import sys_typesConfig from "./sys/types.js";
@@ -57,7 +57,7 @@ export function postInstantiate(instance) {
     asyncify.postInstantiate(instance);
     pointers.postInstantiate(instance);
 
-    stdioPoistInst(instance);
+    stdioPostInst(instance);
 
     // malloc goes last so any extra memory is already finalized
     // Hand __heap_base to malloc()

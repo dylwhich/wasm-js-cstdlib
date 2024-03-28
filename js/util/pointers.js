@@ -106,12 +106,12 @@ export function hexdump(ptr, length=8) {
  * Converts a char* pointer to a JS String
  * @param {*} ptr
  */
-export function getStr(ptr) {
+export function getStr(ptr, maxlength) {
     // make sure len and ptr are ints, not floats!
     let len = 0|0;
     ptr |= 0;
 
-    for (let i = ptr; HEAPU8[i] != 0; i++) {
+    for (let i = ptr; (!maxlength || i < maxlength) && HEAPU8[i] != 0; i++) {
         len++;
     }
 
