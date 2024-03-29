@@ -6,27 +6,11 @@
 		<style type="text/css">
 			body {
                 background-color: #191919;
-            }
-
-            #console {
-                width: 100%;
-                display: flex;
-            }
-
-            #console pre {
-                flex: 50%;
-            }
-
-            #stdout {
                 color: #ffffff;
-                overflow-x: wrap;
-                overflow-y: scroll;
             }
 
-            #stderr {
+            .errmsg {
                 color: #ff8888;
-                overflow-x: wrap;
-                overflow-y: scroll;
             }
 		</style>
 	</head>
@@ -73,11 +57,24 @@
                         },
                         stdout: function(str) {
                             let stdout = document.getElementById("stdout");
-                            stdout.innerText += str;
+                            const scrollDown = (stdout.scrollTop === stdout.scrollHeight);
+                            const span = document.createElement("span");
+                            span.innerText = str;
+                            stdout.appendChild(span);
+                            if (scrollDown) {
+                                stdout.scrollTop = stdout.scrollHeight;
+                            }
                         },
                         stderr: function(str) {
-                            let stderr = document.getElementById("stderr");
-                            stderr.innerText += str;
+                            let stdout = document.getElementById("stdout");
+                            const scrollDown = (stdout.scrollTop === stdout.scrollHeight);
+                            const span = document.createElement("span");
+                            span.innerText = str;
+                            span.className = "errmsg";
+                            stdout.appendChild(span);
+                            if (scrollDown) {
+                                stdout.scrollTop = stdout.scrollHeight;
+                            }
                         }
                     }, [
                         // extra modules to set up
