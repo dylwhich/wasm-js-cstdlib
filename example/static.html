@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html>
+	<head>
+		<meta charset="UTF-8">
+		<title>WASM-Swadge</title>
+		<style type="text/css">
+			body {
+                background-color: #191919;
+            }
+
+            #stdout {
+                color: #ffffff;
+                width: 50%;
+                right: auto;
+                overflow-x: wrap;
+                overflow-y: scroll;
+            }
+
+            #stderr {
+                color: #ff8888;
+                width: 50%;
+                left: auto;
+                overflow-x: wrap;
+                overflow-y: scroll;
+            }
+		</style>
+	</head>
+	<body>
+		<div style="position: absolute; z-index: 3;">
+			<canvas id="canvas" width="240" height="280"></canvas>
+		</div>
+        <pre id="stdout"></pre>
+        <pre id="stderr"></pre>
+		<script type="text/javascript">
+            import("../js/main.js")
+            .then((stdlib) => {
+                import("./cnfg.js").then((cnfg) => {
+                    const imports = {
+                        env: {
+                            memory: new WebAssembly.Memory({initial:200}),
+                        },
+                        bynsyncify: {},
+                    };
+
+                    stdlib.default(imports, {
+                        filesystem: {
+                            "/screenshot.*\\.png": [ {
+                                type: "download",
+                                flags: ["wo"],
+                            } ],
+                            "/spiffs_image/": [ {
+                                    type: "http",
+                                    base: "/spiffs_image/",
+                                    flags: ["ro"],
+                            } ],
+                            // ""
+                            "/nvs.json": [ {
+                                type: "localstorage",
+                                flags: ["rw"],
+                            } ],
+                            // "/" has the defaults
+                            "/": [ {
+                                type: "localstorage",
+                                flags: ["rw"],
+                            } ],
+                        },
+                        stdout: function(str) {
+                            console.log("STATIC STDOUT >>> ", str);
+                            let stdout = document.getElementById("stdout");
+                            stdout.innerText += str;
+                        },
+                        stderr: function(str) {
+                            let stderr = document.getElementById("stderr");
+                            stderr.innerText += str;
+                        }
+                    }, [
+                        // extra modules to set up
+                        cnfg
+                    ]);
+
+                    WebAssembly.instantiateStreaming(fetch("main.wasm"), imports).then(({instance, module}) => {
+                        stdlib.postInstantiate(instance);
+                        instance.exports.main(0|0, 0|0);
+                    });
+                });
+            });
+        </script>
+	</body>
+</html>
