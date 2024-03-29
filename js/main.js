@@ -53,11 +53,21 @@ export function makeArgv() {
     let argv = new Uint32Array(arguments.length);
 }
 
+let _extraModules;
+
 export function postInstantiate(instance) {
     asyncify.postInstantiate(instance);
     pointers.postInstantiate(instance);
 
     stdioPostInst(instance);
+
+    if (typeof _extraModules != "undefined") {
+        for (let mod of _extraModules) {
+            if (mod.postInstantiate) {
+                mod.postInstantiate(instance);
+            }
+        }
+    }
 
     // malloc goes last so any extra memory is already finalized
     // Hand __heap_base to malloc()
@@ -71,7 +81,7 @@ export function postInstantiate(instance) {
  * @param {object} imports The WASM imports containing the memory and other function implementations
  * @param {?object} settings An object of settings for the library
  */
-export default function configure(imports, settings) {
+export default function configure(imports, settings, extraModules) {
     if (settings === 'undefined') {
         settings = baseConf;
     }
@@ -98,6 +108,17 @@ export default function configure(imports, settings) {
     timeConfig(imports, settings);
     typesConfig(imports, settings);
     unistdConfig(imports, settings);
+
+    if (typeof extraModules != "undefined")
+    {
+        _extraModules = extraModules;
+
+        for (let mod of extraModules) {
+            if (mod.default) {
+                mod.default(imports, settings);
+            }
+        }
+    }
 
     const newKeyCount = Object.keys(imports.env).length;
     console.log("stdlib added %d symbols to imports", newKeyCount - origKeyCount);

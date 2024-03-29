@@ -356,6 +356,8 @@ export function free(ptr) {
     }
 }
 
+let memory;
+
 export function postInstantiate(instance) {
     heap = new JsHeap(memory, instance.exports.__heap_base + getStaticHeapSize());
 }

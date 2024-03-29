@@ -206,55 +206,6 @@ if( !RAWDRAW_USE_LOOP_FUNCTION )
 				rendering = false;
 			}
 		},
-
-		asyncResume: () => {
-			if (syncMode === SYNC_UNWINDING) {
-				syncMode = SYNC_REWINDING;
-				wasmExports.asyncify_start_rewind(DATA_ADDR);
-				// The code is now ready to rewind; to start the process, enter the
-				// first function that should be on the call stack.
-				// TODO does this need to be a different function??
-				wasmExports.main();
-			} else {
-				console.error("asyncResume() called at inappropriate time -- state is %o", syncMode);
-			}
-		},
-
-		asyncCancel: () => {
-			// cancel the existing
-			if (syncMode === SYNC_UNWINDING) {
-				wasmExports.asyncify_stop_unwind();
-				syncMode = SYNC_NORMAL_EXEC;
-			} else {
-				console.error("asyncCancel() called at inappropriate time -- state is %o", syncMode);
-			}
-		},
-
-		asyncSuspend: () => {
-			if (syncMode === SYNC_NORMAL_EXEC) {
-				syncMode = SYNC_UNWINDING;
-
-				// We are called in order to start a sleep/unwind.
-				// Fill in the data structure. The first value has the stack location,
-				// which for simplicity we can start right after the data structure itself.
-
-				HEAPU32[DATA_ADDR >> 2] = DATA_ADDR + 8;
-				// The end of the stack will not be reached here anyhow.
-				HEAPU32[DATA_ADDR + 4 >> 2] = 1024|0;
-				wasmExports.asyncify_start_unwind(DATA_ADDR);
-
-				// Return true, to indicate we are suspending -- the caller should start the async callback
-				return true;
-			} else if (syncMode === SYNC_REWINDING) {
-				// This is part of the resume -- the caller should continue after the async action
-				wasmExports.asyncify_stop_rewind();
-				syncMode = SYNC_NORMAL_EXEC;
-				return false;
-			} else {
-				console.error("asyncResume() called at inappropriate time -- state is %o", syncMode);
-				return false;
-			}
-		},
 	}
 }
 

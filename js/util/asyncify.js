@@ -3,7 +3,10 @@ const SYNC_UNWINDING = 1|0;
 const SYNC_REWINDING = 2|0;
 
 const DATA_ADDR = 16|0; // Where the unwind/rewind data structure will live.
+let syncMode = SYNC_NORMAL_EXEC;
 let syncCallIndex = 0;
+
+let HEAPU32;
 
 // Functions exported from wasm by bynsyncify
 let asyncify_start_unwind;
@@ -161,13 +164,10 @@ export function postInstantiate(instance) {
 }
 
 export default function configure(imports, settings) {
-    // it's ok to grab these because they're defined by the engine before calling configure()
     imports.bynsyncify.asyncSuspend = asyncSuspend;
     imports.bynsyncify.asyncCancel = asyncCancel;
     imports.bynsyncify.asyncResume = asyncResume;
     imports.bynsyncify.asyncState = asyncState;
 
-    /*asyncSuspend = imports.bynsyncify.asyncSuspend;
-    asyncCancel = imports.bynsyncify.asyncCancel;
-    asyncResume = imports.bynsyncify.asyncResume;*/
+    HEAPU32 = new Uint32Array(imports.env.memory);
 }

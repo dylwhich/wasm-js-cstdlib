@@ -1235,22 +1235,16 @@ function setupStandardStreams(settings) {
 }
 
 export function postInstantiate(instance) {
-    console.info(instance.exports);
-
-    //fds = getArrUint32(allocStaticHeap(512 * 4, 4), 512 * 4);
     internalBuffer = getArrUint8(allocStaticHeap(BUFSIZ, 16), BUFSIZ);
 
     // stdin (0)
     registerFile(stdinFile);
-    console.debug("stdin=%o", stdinFile);
 
     // stdout (1)
     registerFile(stdoutFile);
-    console.debug("stdout=%o", stdoutFile);
 
     // stderr (2)
     registerFile(stderrFile);
-    console.debug("stderr=%o", stderrFile);
 }
 
 export default function configure(imports, settings) {
@@ -1258,10 +1252,6 @@ export default function configure(imports, settings) {
 
     initFilesystems(fsConfig);
     setupStandardStreams(settings);
-
-    //console.debug("imported stdin=%o", imports.env.stdin);
-    //console.debug("imported stdout=%o", imports.env.stdout);
-    //console.debug("imported stderr=%o", imports.env.stderr);
 
     imports.env.printf = printf;
     imports.env.fprintf = fprintf;
