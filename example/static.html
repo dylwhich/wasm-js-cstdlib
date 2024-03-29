@@ -8,18 +8,23 @@
                 background-color: #191919;
             }
 
+            #console {
+                width: 100%;
+                display: flex;
+            }
+
+            #console pre {
+                flex: 50%;
+            }
+
             #stdout {
                 color: #ffffff;
-                width: 50%;
-                right: auto;
                 overflow-x: wrap;
                 overflow-y: scroll;
             }
 
             #stderr {
                 color: #ff8888;
-                width: 50%;
-                left: auto;
                 overflow-x: wrap;
                 overflow-y: scroll;
             }
@@ -29,8 +34,10 @@
 		<div style="position: absolute; z-index: 3;">
 			<canvas id="canvas" width="240" height="280"></canvas>
 		</div>
-        <pre id="stdout"></pre>
-        <pre id="stderr"></pre>
+        <div id="console">
+            <pre id="stdout"></pre>
+            <pre id="stderr"></pre>
+        </div>
 		<script type="text/javascript">
             import("../js/main.js")
             .then((stdlib) => {
@@ -65,7 +72,6 @@
                             } ],
                         },
                         stdout: function(str) {
-                            console.log("STATIC STDOUT >>> ", str);
                             let stdout = document.getElementById("stdout");
                             stdout.innerText += str;
                         },
