@@ -1078,7 +1078,7 @@ async function jsFputc(char, stream) {
         if (handle.writeStream) {
             internalBuffer[0] = (char & 0xFF);
             try {
-                await handle.writer.write(new DataView(memory.buffer, internalBuffer.offset, 1));
+                await handle.writer.write(getMemView(internalBuffer.offset, 1));
                 return 1;
             } catch (err) {
                 console.error("jsFputc(char, stream) err: %o", err);
@@ -1206,7 +1206,7 @@ function setupStandardStreams(settings) {
         }), new FileMode("w"));
     }
 
-    if (settings.stderr && typeof(settings.stder) === "function") {
+    if (settings.stderr && typeof(settings.stderr) === "function") {
         stderrFile = new FileHandle(undefined, new WritableStream({
             write(chunk) {
                 settings.stderr(utf8Decoder.decode(chunk));

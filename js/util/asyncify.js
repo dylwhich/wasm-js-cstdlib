@@ -169,5 +169,5 @@ export default function configure(imports, settings) {
     imports.bynsyncify.asyncResume = asyncResume;
     imports.bynsyncify.asyncState = asyncState;
 
-    HEAPU32 = new Uint32Array(imports.env.memory);
+    HEAPU32 = new Uint32Array(imports.env.memory.buffer);
 }
