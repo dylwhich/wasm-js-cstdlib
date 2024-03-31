@@ -1,5 +1,4 @@
-import { getStr, getWideStr, writeStr, getMemView, getArrUint8, hexdump, getPtrAligned, endian, allocStaticHeap, getArrUint32 } from './util/pointers.js'
-import { runAsync } from './util/asyncify.js';
+import { getStr, getWideStr, writeStr, getMemView, getArrUint8, getPtrAligned, endian, allocStaticHeap } from './util/pointers.js'
 
 export const EOF = -1;
 export const F_OK = 0;
@@ -631,11 +630,11 @@ function getFilesystems(path, mode) {
     return result;
 }
 
-export function fopen(pathname, mode) {
-    return runAsync({pathname, mode}, ({pathname, mode}) => {
+export async function fopen(pathname, mode) {
+    return await
         // parse the path
         // look up the filesystem config for that path (make a function for that)
-        return new Promise((resolve, reject) => {
+        new Promise((resolve, reject) => {
             console.debug("fopen(%s, %s)", getStr(pathname), getStr(mode));
             const parsedMode = new FileMode(getStr(mode));
             const pathStr = getStr(pathname);
@@ -681,7 +680,6 @@ export function fopen(pathname, mode) {
                 }
             });
         });
-    });
 }
 
 export function fclose(stream) {
@@ -782,97 +780,93 @@ function wrapReadable(read) {
     }(read);
 }
 
-export function fread(ptr, size, nmemb, stream) {
-    return runAsync({ptr, size, nmemb, stream}, ({ptr, size, nmemb, stream}) => {
-        const handle = FILES[stream];
+export async function fread(ptr, size, nmemb, stream) {
+    const handle = FILES[stream];
 
-        if (handle) {
-            //const view = getMemView(ptr, size * nmemb);
-            //const view = getArrUint8(ptr, size * nmemb);
-            const readLen = size * nmemb|0;
-            // number of bytes already written out to the caller's buf
-            // (if we repeat the fetch in the middle of the read)
-            let queued = 0;
-            let freadLen = 0;
+    if (handle) {
+        //const view = getMemView(ptr, size * nmemb);
+        //const view = getArrUint8(ptr, size * nmemb);
+        const readLen = size * nmemb|0;
+        // number of bytes already written out to the caller's buf
+        // (if we repeat the fetch in the middle of the read)
+        let queued = 0;
+        let freadLen = 0;
 
-            return new Promise((resolve, reject) => {
-            //function fetchMore() {
-                const buf = new ArrayBuffer(readLen);
-                const view = new DataView(buf, 0, readLen-queued);
+        return await new Promise((resolve, reject) => {
+        //function fetchMore() {
+            const buf = new ArrayBuffer(readLen);
+            const view = new DataView(buf, 0, readLen-queued);
 
-                handle.reader.read(view).then(({ done, value }) => {
-                    let thisRead = 0;
+            handle.reader.read(view).then(({ done, value }) => {
+                let thisRead = 0;
 
-                    if (value) {
-                        thisRead = value.byteLength;
-                        //hexdump(view.byteOffset, view.byteLength);
-                        freadLen += thisRead;
-                        handle.readPos += thisRead;
+                if (value) {
+                    thisRead = value.byteLength;
+                    //hexdump(view.byteOffset, view.byteLength);
+                    freadLen += thisRead;
+                    handle.readPos += thisRead;
 
-                        const outBuf = getArrUint8(ptr + queued, thisRead);
-                        for (let i = 0; i < value.byteLength; i++) {
-                            outBuf[i] = value.getUint8(i);
-                        }
+                    const outBuf = getArrUint8(ptr + queued, thisRead);
+                    for (let i = 0; i < value.byteLength; i++) {
+                        outBuf[i] = value.getUint8(i);
                     }
+                }
 
-                    if (freadLen < readLen) {
-                        queued += thisRead;
+                if (freadLen < readLen) {
+                    queued += thisRead;
 
-                        // Don't resume, keep fetching until we get all we can or the stream closes
-                        if (!done) {
-                            handle.reader.closed.then(() => {
-                                handle.eof = true;
-                                console.debug("locked?????", handle.reader.locked);
-                                resolve(freadLen);
-                            }).catch((err) => {
-                                console.error("err on reader.closed()! %o", err);
-                                resolve(freadLen);
-                            });
-                        } else {
-                            console.debug("Unexpectedly done???");
+                    // Don't resume, keep fetching until we get all we can or the stream closes
+                    if (!done) {
+                        handle.reader.closed.then(() => {
                             handle.eof = true;
+                            console.debug("locked?????", handle.reader.locked);
                             resolve(freadLen);
-                        }
+                        }).catch((err) => {
+                            console.error("err on reader.closed()! %o", err);
+                            resolve(freadLen);
+                        });
                     } else {
-                        // we're done or got all the things, return!
+                        console.debug("Unexpectedly done???");
+                        handle.eof = true;
                         resolve(freadLen);
                     }
+                } else {
+                    // we're done or got all the things, return!
+                    resolve(freadLen);
+                }
 
-                }).catch((err) => {
-                    console.error("err: %o", err);
-                    // todo error codes
-                    handle.err = 1;
+            }).catch((err) => {
+                console.error("err: %o", err);
+                // todo error codes
+                handle.err = 1;
 
-                    resolve(0);
-                });
+                resolve(0);
             });
-        } else {
-            return Promise.resolve(-1);
-        }
-    });
+        });
+    } else {
+        return await Promise.resolve(-1);
+    }
 }
 
-export function fwrite(ptr, size, nmemb, stream) {
-    return runAsync({ptr, size, nmemb, stream}, ({ptr, size, nmemb, stream}) => {
-        const handle = FILES[stream];
+export async function fwrite(ptr, size, nmemb, stream) {
+    const handle = FILES[stream];
 
-        if (handle && handle.writeStream) {
-            const arr = getArrUint8(ptr, (size * nmemb));
+    if (handle && handle.writeStream) {
+        const arr = getArrUint8(ptr, (size * nmemb));
 
-            return handle.writer.write(arr).then((res) => {
-                console.debug("written, res => %o", res);
+        return await handle.writer.write(arr).then((res) => {
+            console.debug("written, res => %o", res);
 
-                let written = (size * nmemb);
-                handle.writePos += written;
-                return written;
-            }).catch((err) => {
-                console.debug("Write error: %o", err);
-                return -1;
-            });
-        } else {
-            return Promise.resolve(-1);
-        }
-    });
+            let written = (size * nmemb);
+            handle.writePos += written;
+            return written;
+        }).catch((err) => {
+            console.debug("Write error: %o", err);
+            return -1;
+        });
+    } else {
+        return await Promise.resolve(-1);
+    }
 }
 
 // TODO / Not Yet Supported:
@@ -1023,8 +1017,8 @@ export function sprintf(buf, str, varargs) {
     return result.length;
 }
 
-export function printf(str, varargs) {
-    return fprintf(1, str, varargs);
+export async function printf(str, varargs) {
+    return await fprintf(1, str, varargs);
 }
 
 async function jsFputc(char, stream) {
@@ -1076,8 +1070,7 @@ async function jsFwrite(ptr, size, nmemb, stream) {
     }
 }
 
-export function fprintf(stream, str, varargs) {
-    return runAsync({stream, str, varargs}, ({stream, str, varargs}) => {
+export async function fprintf(stream, str, varargs) {
         let result = jsSprintf(str, varargs);
         // trim the string if too long
         if (result.length > BUFSIZ)
@@ -1085,44 +1078,21 @@ export function fprintf(stream, str, varargs) {
             result = result.substring(0, BUFSIZ);
         }
         writeStr(internalBuffer, result);
-        return jsFwrite(internalBuffer.byteOffset, 1, result.length, stream).then((res) => {
-            console.debug("resolving jsFwrite(%s(%o)) --> %o", result, internalBuffer, res);
-            return res;
-        }).catch((err) => {
-            console.error("Error in fprintf: %o", err);
-            return err;
-        });
-    });
-
-    /*return wrapPromise(() => {
-        return new Promise((resolve, reject) => {
-            let result = jsSprintf(str, varargs);
-            // trim the string if too long
-            if (result.length > BUFSIZ)
-            {
-                result = result.substring(0, BUFSIZ);
-            }
-            writeStr(internalBuffer, result);
-            jsFwrite(internalBuffer.byteOffset, 1, result.length, stream).then((res) => {
-                console.debug("resolving jsFwrite(%s(%o)) --> %o", result, internalBuffer, res);
-                resolve(res);
-            }).catch(reject);
-        });
-    });*/
+        return await jsFwrite(internalBuffer.byteOffset, 1, result.length, stream);
 }
 
-export function fputc(c, stream) {
+export async function fputc(c, stream) {
     internalBuffer[0] = ((c|0) & 0xFF);
-    return fwrite(internalBuffer.byteOffset, 1, 1, stream);
+    return await fwrite(internalBuffer.byteOffset, 1, 1, stream);
 }
 
-export function putchar(charValue) {
-    return fputc(charValue, 1);
+export async function putchar(charValue) {
+    return await fputc(charValue, 1);
 }
 
-export function fputs(strPointer, stream) {
-    return runAsync({strPointer, stream}, ({strPointer, stream}) => {
-        return new Promise((resolve, reject) => {
+export async function fputs(strPointer, stream) {
+
+        return await new Promise((resolve, reject) => {
             jsFwrite(strPointer, 1, getStr(strPointer).length, stream).then((res) => {
                 if (res >= 0) {
                     jsFputc(10|0, 1).then((res) => {
@@ -1136,11 +1106,10 @@ export function fputs(strPointer, stream) {
                 resolve(-1);
             });
         });
-    });
 }
 
-export function puts(strPointer) {
-    return fputs(strPointer, 1);
+export async function puts(strPointer) {
+    return await fputs(strPointer, 1);
 }
 
 function setupStandardStreams(settings) {

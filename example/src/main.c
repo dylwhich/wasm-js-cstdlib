@@ -142,7 +142,8 @@ int __attribute__((export_name("main"))) main(int argc, char** argv) {
         CNFGPenX = 40;
         CNFGPenY = 40;
 
-        sprintf(buf, "Testing %d", count++);
+        sprintf(buf, "Testing %d (%d)", count, count / 30);
+        count++;
         CNFGDrawText(buf, 3);
 
         CNFGSwapBuffers();

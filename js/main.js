@@ -7,7 +7,6 @@
 
 // Internal, but still needs to be configured
 import * as pointers from "./util/pointers.js";
-import * as asyncify from "./util/asyncify.js";
 
 // Header implementations
 import assertConfig from "./assert.js";
@@ -56,7 +55,6 @@ export function makeArgv() {
 let _extraModules;
 
 export function postInstantiate(instance) {
-    asyncify.postInstantiate(instance);
     pointers.postInstantiate(instance);
 
     stdioPostInst(instance);
@@ -90,7 +88,6 @@ export default function configure(imports, settings, extraModules) {
 
     const origKeyCount = Object.keys(imports.env).length;
 
-    asyncify.default(imports, settings);
     pointers.default(imports, settings);
 
     // Configure each module

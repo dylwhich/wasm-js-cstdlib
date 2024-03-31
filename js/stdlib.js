@@ -1,5 +1,4 @@
 import { getStr } from './util/pointers.js';
-import { asyncSuspend, asyncResume } from './util/asyncify.js';
 
 let table;
 

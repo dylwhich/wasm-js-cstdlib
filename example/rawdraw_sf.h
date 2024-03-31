@@ -2726,7 +2726,7 @@ void CNFGGetDimensions( short * x, short * y )
 
 #elif defined( __wasm__ )
 //Right now, designed for use with https://github.com/cnlohr/rawdrawwasm/
-#include <CNFG.h>
+//#include <CNFG.h>
 #include <stdint.h>
 
 extern void __attribute__((import_module("bynsyncify"))) CNFGSwapBuffersInternal();

@@ -1,12 +1,39 @@
 /*
+The MIT License (MIT)
+
+Copyright (c) 2010-2020 <>< CNLohr
+Copyright (c) 2004-2008 Joshua Allen (portions of CNFG3D)
+Copyright (c) 2011-2013 Luc Verhaegen <libv@skynet.be> (Android)
+Copyright (c) 2024 Dylan Whichard <dylan@whichard.com> (JS porting)
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+*/
+
+/*
  *
  * Adapted from https://github.com/cntools/rawdraw
  * Thanks to @zNoctum and @redline2466.
  *
  */
 
+
 import { getArrFloat, getArrUint8, getStr, getPtr, endian } from "../js/util/pointers.js";
-import { runAsync, callExport } from "../js/util/asyncify.js";
 
 let fullscreen = false;
 let useLoopFunction = false;
@@ -18,6 +45,10 @@ let wglShader = null; //Standard flat color shader
 let wglABV = null;    //Array buffer for vertices
 let wglABC = null;    //Array buffer for colors.
 let wglUXFRM = null;  //Uniform location for transform on solid colors
+
+// workaround for desktop environments that send repeated keydown events rather than the browser
+// sending repeated key events natively, with event.repeat === true
+const keyState = {};
 
 //Utility stuff for WebGL sahder creation.
 function wgl_makeShader( vertText, fragText )
@@ -131,34 +162,41 @@ function setupMainLoop() {
 
 function setupEventHandlers(instance) {
     //Attach inputs
-    /*if(instance.exports.HandleMotion) {
-        canvas.addEventListener('mousemove', e => {
+    if(instance.exports.HandleMotion) {
+        (canvas ? canvas : document).addEventListener('mousemove', e => {
             instance.exports.HandleMotion( e.offsetX, e.offsetY, e.buttons );
         });
-        canvas.addEventListener('touchmove', e => {
+        (canvas ? canvas : document).addEventListener('touchmove', e => {
             instance.exports.HandleMotion( e.touches[0].clientX, e.touches[0].clientY, 1 );
         });
     }
 
     if( instance.exports.HandleButton ) {
-        canvas.addEventListener('mouseup', e => {
+        (canvas ? canvas : document).addEventListener('mouseup', e => {
+            e.preventDefault();
             instance.exports.HandleButton( e.offsetX, e.offsetY, e.button, 0 ); return false;
         });
-        canvas.addEventListener('mousedown', e => {
+        (canvas ? canvas : document).addEventListener('mousedown', e => {
+            e.preventDefault();
             instance.exports.HandleButton( e.offsetX, e.offsetY, e.button, 1 ); return false;
         });
-    }*/
+    }
 
     if( instance.exports.HandleKey ) {
         // TODO: Make this use the new cool non-deprecated key stuff
+        // Note, you can only add a key listener to either a text entry field, or document
         document.addEventListener('keydown', e => {
-            console.log("keydown: %o, instance: %o", e, instance);
-            callExport(instance.exports.HandleKey, e.keyCode, 1 );
+            if (!e.repeat && !keyState[e.keyCode]) {
+                keyState[e.keyCode] = true;
+                instance.exports.HandleKey(e.keyCode, 1);
+            }
         });
-        /*document.addEventListener('keyup', e => {
-            console.log("keyup: %o, instance: %o", e, instance);
-            callExport(instance.exports.HandleKey, e.keyCode, 0 );
-        });*/
+        document.addEventListener('keyup', e => {
+            if (!e.repeat && keyState[e.keyCode]) {
+                keyState[e.keyCode] = false;
+                instance.exports.HandleKey(e.keyCode, 0);
+            }
+        });
     }
 }
 
@@ -200,13 +238,11 @@ export function OGGetAbsoluteTime() {
     return new Date().getTime()/1000.;
 }
 
-export function CNFGSwapBuffersInternal() {
-    runAsync(null, () => {
-        return new Promise((resolve, reject) => {
-            requestAnimationFrame(() => {
-                FrameStart();
-                resolve();
-            });
+export async function CNFGSwapBuffersInternal() {
+    return await new Promise((resolve, reject) => {
+        requestAnimationFrame(() => {
+            FrameStart();
+            resolve();
         });
     });
 }
