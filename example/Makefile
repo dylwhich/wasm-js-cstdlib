@@ -20,6 +20,9 @@ CFLAGS_WASM = \
 #	-Wl,--print-map
 #	-Wl,--import-undefined \
 
+INC = \
+	-I.
+
 CFLAGS_WASM += \
 	-nostdlib \
 	--target=wasm32 \

@@ -9,23 +9,50 @@
                 color: #ffffff;
             }
 
+            #screen-container {
+                width: 100%;
+                text-align: center;
+                z-index: 3;
+
+                padding: 3px;
+            }
+
+            #canvas {
+                display: inline-block;
+                background-color: #000000;
+                border-radius: 4px;
+                border: gray 1px solid;
+            }
+
+            #console {
+                border: 1px solid #808080;
+                border-radius: 5px;
+                overflow-y: scroll;
+                min-height: 6em;
+            }
+
+            #stdout {
+                padding: .5em;
+                white-space: pre-wrap;
+            }
+
             .errmsg {
                 color: #ff8888;
             }
 		</style>
 	</head>
 	<body>
-		<div style="position: absolute; z-index: 3;">
-			<canvas id="canvas" width="240" height="280"></canvas>
+		<div id="screen-container">
+			<canvas id="canvas" width="280" height="240"></canvas>
 		</div>
         <div id="console">
             <pre id="stdout"></pre>
-            <pre id="stderr"></pre>
         </div>
 		<script type="text/javascript">
             import("../js/main.js")
             .then((stdlib) => {
                 import("./cnfg.js").then((cnfg) => {
+                    // Create memory with 200 pages initial (12.5MiB)
                     const imports = {
                         env: {
                             memory: new WebAssembly.Memory({initial:200}),
@@ -75,7 +102,8 @@
                             if (scrollDown) {
                                 stdout.scrollTop = stdout.scrollHeight;
                             }
-                        }
+                        },
+                        canvas: document.getElementById("canvas")
                     }, [
                         // extra modules to set up
                         cnfg

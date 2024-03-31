@@ -45,6 +45,8 @@ int getchar(void);
 void fputc(char c, FILE* stream);
 int putc(int c, FILE* stream);
 int putchar(int c);
+int fputs(char* s, FILE* stream);
+int puts(char* s);
 char* fgets(char* s, int size, FILE* stream);
 int ungetc(int c, FILE* stream);
 int fscanf(FILE* stream, const char* fmt, ...);

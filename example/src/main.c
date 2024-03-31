@@ -2,6 +2,27 @@
 #include <string.h>
 #include <stdlib.h>
 
+#define CNFG3D
+#define CNFG_IMPLEMENTATION
+#include "rawdraw_sf.h"
+
+//#define async __attribute__((import_module("bynsyncify")))
+
+void __attribute__((export_name("HandleKey"))) HandleKey( int keycode, int bDown )
+{
+    printf("Key: %d, %s\n", keycode, bDown ? "Down" : "Up");
+}
+
+void __attribute__((export_name("HandleButton"))) HandleButton( int x, int y, int button, int bDown )
+{
+    printf("Button: (%d, %d), button=%d, %s\n", x, y, button, bDown ? "Down" : "Up");
+}
+
+void __attribute__((export_name("HandleMotion"))) HandleMotion( int x, int y, int mask )
+{
+	printf("Motion: (%d, %d), mask=%d\n", x, y, mask);
+}
+
 int __attribute__((export_name("main"))) main(int argc, char** argv) {
     printf("argc: %d\n", argc);
 
@@ -103,6 +124,29 @@ int __attribute__((export_name("main"))) main(int argc, char** argv) {
     printf("strcmp(hello, hello world) == %d\n", strcmp(h, hw));
     printf("strncmp(hello, hello world, 5) == %d\n", strncmp(h, hw, 5));
     printf("strncmp(hello, hello world, 6) == %d\n", strncmp(h, hw, 6));
+
+    puts("adding\nmore\nlines\nto\nthe\nstdout\nto\ntest\nscrolling\nhere\n");
+    fputs("how\nabout\nsome\nerrors\n", stderr);
+    puts("and one more regular\n");
+
+    printf("Setting up rawdraw...\n");
+    //CNFGSetupFullscreen("Static HTML Rawdraw WASM Example", 0);
+    CNFGSetup("Static HTML Rawdraw WASM Example", 480, 560);
+
+    int screenX, screenY;
+    int count = 0;
+
+    while (CNFGHandleInput()) {
+        CNFGClearFrame();
+        CNFGColor(0xFFFFFFFF);
+        CNFGPenX = 40;
+        CNFGPenY = 40;
+
+        sprintf(buf, "Testing %d", count++);
+        CNFGDrawText(buf, 3);
+
+        CNFGSwapBuffers();
+    }
 
     return 0;
 }

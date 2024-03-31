@@ -6,7 +6,7 @@
  */
 
 import { getArrFloat, getArrUint8, getStr, getPtr, endian } from "../js/util/pointers.js";
-import { asyncSuspend, asyncResume } from "../js/util/asyncify.js";
+import { runAsync, callExport } from "../js/util/asyncify.js";
 
 let fullscreen = false;
 let useLoopFunction = false;
@@ -131,20 +131,34 @@ function setupMainLoop() {
 
 function setupEventHandlers(instance) {
     //Attach inputs
-    if(instance.exports.HandleMotion) {
-        canvas.addEventListener('mousemove', e => { instance.exports.HandleMotion( e.offsetX, e.offsetY, e.buttons ); } );
-        canvas.addEventListener('touchmove', e => { instance.exports.HandleMotion( e.touches[0].clientX, e.touches[0].clientY, 1 ); } );
+    /*if(instance.exports.HandleMotion) {
+        canvas.addEventListener('mousemove', e => {
+            instance.exports.HandleMotion( e.offsetX, e.offsetY, e.buttons );
+        });
+        canvas.addEventListener('touchmove', e => {
+            instance.exports.HandleMotion( e.touches[0].clientX, e.touches[0].clientY, 1 );
+        });
     }
 
     if( instance.exports.HandleButton ) {
-        canvas.addEventListener('mouseup', e => { instance.exports.HandleButton( e.offsetX, e.offsetY, e.button, 0 ); return false; } );
-        canvas.addEventListener('mousedown', e => { instance.exports.HandleButton( e.offsetX, e.offsetY, e.button, 1 ); return false; } );
-    }
+        canvas.addEventListener('mouseup', e => {
+            instance.exports.HandleButton( e.offsetX, e.offsetY, e.button, 0 ); return false;
+        });
+        canvas.addEventListener('mousedown', e => {
+            instance.exports.HandleButton( e.offsetX, e.offsetY, e.button, 1 ); return false;
+        });
+    }*/
 
     if( instance.exports.HandleKey ) {
         // TODO: Make this use the new cool non-deprecated key stuff
-        document.addEventListener('keydown', e => { instance.exports.HandleKey( e.keyCode, 1 ); } );
-        document.addEventListener('keyup', e => { instance.exports.HandleKey( e.keyCode, 0 ); } );
+        document.addEventListener('keydown', e => {
+            console.log("keydown: %o, instance: %o", e, instance);
+            callExport(instance.exports.HandleKey, e.keyCode, 1 );
+        });
+        /*document.addEventListener('keyup', e => {
+            console.log("keyup: %o, instance: %o", e, instance);
+            callExport(instance.exports.HandleKey, e.keyCode, 0 );
+        });*/
     }
 }
 
@@ -155,7 +169,7 @@ function setupEventHandlers(instance) {
 export function CNFGEmitBackendTriangles(vertsF, colorsI, vertcount ) {
     //Take a float* and uint32_t* of vertices, and flat-render them.
     CNFGEmitBackendTrianglesJS(
-        getArrFloat(vertsF, vertCount*3).slice(),
+        getArrFloat(vertsF, vertcount*3).slice(),
         getArrUint8(colorsI, vertcount*4).slice(),
         vertcount );
 }
@@ -187,12 +201,14 @@ export function OGGetAbsoluteTime() {
 }
 
 export function CNFGSwapBuffersInternal() {
-    if (asyncSuspend()) {
-        requestAnimationFrame(() => {
-            FrameStart();
-            asyncResume();
+    runAsync(null, () => {
+        return new Promise((resolve, reject) => {
+            requestAnimationFrame(() => {
+                FrameStart();
+                resolve();
+            });
         });
-    }
+    });
 }
 
 export function postInstantiate(instance) {
@@ -210,13 +226,14 @@ export default function configure(imports, settings) {
 
     wgl = canvas.getContext("webgl");
 
-    imports.CNFGEmitBackendTriangles = CNFGEmitBackendTriangles;
-    imports.CNFGSetup = CNFGSetup;
-    imports.CNFGSetupFullscreen = CNFGSetupFullscreen;
-    imports.CNFGClearFrameInternal = CNFGClearFrameInternal;
-    imports.CNFGGetDimensions = CNFGGetDimensions;
-    imports.OGGetAbsoluteTime = OGGetAbsoluteTime;
+    imports.env.CNFGEmitBackendTriangles = CNFGEmitBackendTriangles;
+    imports.env.CNFGSetup = CNFGSetup;
+    imports.env.CNFGSetupFullscreen = CNFGSetupFullscreen;
+    imports.env.CNFGClearFrameInternal = CNFGClearFrameInternal;
+    imports.env.CNFGGetDimensions = CNFGGetDimensions;
+    imports.env.OGGetAbsoluteTime = OGGetAbsoluteTime;
 
+    imports.env.CNFGSwapBuffersInternal = CNFGSwapBuffersInternal;
     imports.bynsyncify.CNFGSwapBuffersInternal = CNFGSwapBuffersInternal;
 
     initWglShaders();

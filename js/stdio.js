@@ -1,5 +1,5 @@
 import { getStr, getWideStr, writeStr, getMemView, getArrUint8, hexdump, getPtrAligned, endian, allocStaticHeap, getArrUint32 } from './util/pointers.js'
-import { asyncSuspend, asyncCancel, asyncResume, wrapPromise } from './util/asyncify.js';
+import { runAsync } from './util/asyncify.js';
 
 export const EOF = -1;
 export const F_OK = 0;
@@ -631,67 +631,57 @@ function getFilesystems(path, mode) {
     return result;
 }
 
-let fopenRes = null;
 export function fopen(pathname, mode) {
-    if (asyncSuspend()) {
+    return runAsync({pathname, mode}, ({pathname, mode}) => {
         // parse the path
         // look up the filesystem config for that path (make a function for that)
-        console.debug("fopen(%s, %s)", getStr(pathname), getStr(mode));
-        const parsedMode = new FileMode(getStr(mode));
-        const pathStr = getStr(pathname);
+        return new Promise((resolve, reject) => {
+            console.debug("fopen(%s, %s)", getStr(pathname), getStr(mode));
+            const parsedMode = new FileMode(getStr(mode));
+            const pathStr = getStr(pathname);
 
-        console.debug("fopen(%s, %o)", pathStr, parsedMode);
-        const filesystems = getFilesystems(pathStr, parsedMode);
-        console.debug(filesystems);
+            console.debug("fopen(%s, %o)", pathStr, parsedMode);
+            const filesystems = getFilesystems(pathStr, parsedMode);
+            console.debug(filesystems);
 
 
-        const search = [...filesystems.values()];
-        console.debug("search=%o", search);
-        const promises = search.map((val) => {
-            console.debug("val=%o\n", val);
-            if (val.fs) {
-                let promise = val.fs.open(val.path, parsedMode);
-                console.debug("promise=%o", promise);
-                return promise;
-            } else {
-                return Promise.resolve();
-            }
-            //return val.fs ? val.fs.open(val.path) : Promise.resolve();
-        });
-
-        Promise.all(promises).then((results) => {
-            let out = null;
-            console.debug("Got all results %o", results);
-            for (let i = 0; i < results.length; i++) {
-                if (results[i]) {
-                    out = results[i];
-                    console.debug("found %o in loop", out);
-                    break;
+            const search = [...filesystems.values()];
+            console.debug("search=%o", search);
+            const promises = search.map((val) => {
+                console.debug("val=%o\n", val);
+                if (val.fs) {
+                    let promise = val.fs.open(val.path, parsedMode);
+                    console.debug("promise=%o", promise);
+                    return promise;
                 } else {
-                    console.debug("results[%o] is false?? %o", i, results[i]);
+                    return Promise.resolve();
                 }
-            }
+                //return val.fs ? val.fs.open(val.path) : Promise.resolve();
+            });
 
-            if (out) {
-                console.debug("found %o", out);
-            } else {
-                console.debug("didn't find");
-            }
+            Promise.all(promises).then((results) => {
+                let out = null;
+                console.debug("Got all results %o", results);
+                for (let i = 0; i < results.length; i++) {
+                    if (results[i]) {
+                        out = results[i];
+                        console.debug("found %o in loop", out);
+                        break;
+                    } else {
+                        console.debug("results[%o] is false?? %o", i, results[i]);
+                    }
+                }
 
-            return out;
-        }).then((res) => {
-            console.debug("aaaa, %o", res);
-            fopenRes = registerFile(res);
-            asyncResume();
+                if (out) {
+                    console.debug("found %o", out);
+                    resolve(registerFile(out));
+                } else {
+                    console.debug("didn't find")
+                    resolve(0);
+                }
+            });
         });
-
-    } else {
-        // do something with result?? return?
-        console.debug("handle is now %o", fopenRes);
-        const ret = fopenRes;
-        fopenRes = null;
-        return ret;
-    }
+    });
 }
 
 export function fclose(stream) {
@@ -792,9 +782,8 @@ function wrapReadable(read) {
     }(read);
 }
 
-let freadLen = undefined;
 export function fread(ptr, size, nmemb, stream) {
-    if (asyncSuspend()) {
+    return runAsync({ptr, size, nmemb, stream}, ({ptr, size, nmemb, stream}) => {
         const handle = FILES[stream];
 
         if (handle) {
@@ -804,9 +793,10 @@ export function fread(ptr, size, nmemb, stream) {
             // number of bytes already written out to the caller's buf
             // (if we repeat the fetch in the middle of the read)
             let queued = 0;
-            freadLen = 0;
+            let freadLen = 0;
 
-            function fetchMore() {
+            return new Promise((resolve, reject) => {
+            //function fetchMore() {
                 const buf = new ArrayBuffer(readLen);
                 const view = new DataView(buf, 0, readLen-queued);
 
@@ -830,93 +820,59 @@ export function fread(ptr, size, nmemb, stream) {
 
                         // Don't resume, keep fetching until we get all we can or the stream closes
                         if (!done) {
-                            handle.reader.unl
                             handle.reader.closed.then(() => {
                                 handle.eof = true;
                                 console.debug("locked?????", handle.reader.locked);
-                                asyncResume();
+                                resolve(freadLen);
                             }).catch((err) => {
                                 console.error("err on reader.closed()! %o", err);
-                                asyncResume();
+                                resolve(freadLen);
                             });
                         } else {
                             console.debug("Unexpectedly done???");
                             handle.eof = true;
-                            asyncResume();
+                            resolve(freadLen);
                         }
                     } else {
                         // we're done or got all the things, return!
-                        asyncResume();
+                        resolve(freadLen);
                     }
 
                 }).catch((err) => {
                     console.error("err: %o", err);
-                    freadLen = 0;
                     // todo error codes
                     handle.err = 1;
 
-                    asyncResume();
+                    resolve(0);
                 });
-            }
-
-            fetchMore();
-
-            return 0;
+            });
         } else {
-            asyncCancel();
-            return -1;
+            return Promise.resolve(-1);
         }
-    } else {
-        let res = freadLen;
-        freadLen = undefined;
-        return res;
-    }
-
-    return 0;
+    });
 }
 
-let fwriteLen = undefined;
 export function fwrite(ptr, size, nmemb, stream) {
-    if (asyncSuspend()) {
+    return runAsync({ptr, size, nmemb, stream}, ({ptr, size, nmemb, stream}) => {
         const handle = FILES[stream];
 
-        if (handle) {
+        if (handle && handle.writeStream) {
             const arr = getArrUint8(ptr, (size * nmemb));
-            console.debug("writing... %o to %o (%s)", arr, handle, getStr(ptr));
-            if (handle.writeStream) {
-                console.debug("writer: %o", handle.writer);
-                handle.writer.write(arr).then(
-                    (res) => {
-                        console.debug("written, res => %o", res);
-                        fwriteLen = (size * nmemb);
-                        handle.writePos += fwriteLen;
-                        asyncResume();
-                    }
-                ).catch((err) => {
-                    console.debug("Write error: %o", err);
-                    fwriteLen = -1;
-                    asyncResume();
-                });
-                // won't actually return here since we are suspended
-                return 0;
-            } else {
-                // cancel because we're not actually going to do a promise
-                asyncCancel();
-                console.error("attempt to write to incompatible file handle %o", handle);
-                console.error("handle fd=%o", FILES.indexOf(handle));
-                // TODO errno and such
-                return -1;
-            }
-        } else {
-            asyncCancel();
-            console.error("??? file not found? handle is %o / stream is %o", handle, stream);
-            return -1;
-        }
-    } else {
-        return fwriteLen;
-    }
 
-    return 0;
+            return handle.writer.write(arr).then((res) => {
+                console.debug("written, res => %o", res);
+
+                let written = (size * nmemb);
+                handle.writePos += written;
+                return written;
+            }).catch((err) => {
+                console.debug("Write error: %o", err);
+                return -1;
+            });
+        } else {
+            return Promise.resolve(-1);
+        }
+    });
 }
 
 // TODO / Not Yet Supported:
@@ -1121,7 +1077,24 @@ async function jsFwrite(ptr, size, nmemb, stream) {
 }
 
 export function fprintf(stream, str, varargs) {
-    return wrapPromise(() => {
+    return runAsync({stream, str, varargs}, ({stream, str, varargs}) => {
+        let result = jsSprintf(str, varargs);
+        // trim the string if too long
+        if (result.length > BUFSIZ)
+        {
+            result = result.substring(0, BUFSIZ);
+        }
+        writeStr(internalBuffer, result);
+        return jsFwrite(internalBuffer.byteOffset, 1, result.length, stream).then((res) => {
+            console.debug("resolving jsFwrite(%s(%o)) --> %o", result, internalBuffer, res);
+            return res;
+        }).catch((err) => {
+            console.error("Error in fprintf: %o", err);
+            return err;
+        });
+    });
+
+    /*return wrapPromise(() => {
         return new Promise((resolve, reject) => {
             let result = jsSprintf(str, varargs);
             // trim the string if too long
@@ -1135,7 +1108,7 @@ export function fprintf(stream, str, varargs) {
                 resolve(res);
             }).catch(reject);
         });
-    });
+    });*/
 }
 
 export function fputc(c, stream) {
@@ -1147,10 +1120,10 @@ export function putchar(charValue) {
     return fputc(charValue, 1);
 }
 
-export function puts(strPointer) {
-    return wrapPromise(() => {
+export function fputs(strPointer, stream) {
+    return runAsync({strPointer, stream}, ({strPointer, stream}) => {
         return new Promise((resolve, reject) => {
-            jsFwrite(strPointer, 1, getStr(strPointer).length, 1).then((res) => {
+            jsFwrite(strPointer, 1, getStr(strPointer).length, stream).then((res) => {
                 if (res >= 0) {
                     jsFputc(10|0, 1).then((res) => {
                         resolve(res);
@@ -1164,6 +1137,10 @@ export function puts(strPointer) {
             });
         });
     });
+}
+
+export function puts(strPointer) {
+    return fputs(strPointer, 1);
 }
 
 function setupStandardStreams(settings) {
@@ -1259,6 +1236,7 @@ export default function configure(imports, settings) {
     imports.env.sprintf = sprintf;
     imports.env.putchar = putchar;
     imports.env.puts = puts;
+    imports.env.fputs = fputs;
 
     // Async file functions - bynsync registration
     imports.bynsyncify.fopen = fopen;
@@ -1270,6 +1248,7 @@ export default function configure(imports, settings) {
     imports.bynsyncify.fputc = fputc;
     imports.bynsyncify.putc = fputc;
     imports.bynsyncify.putchar = putchar;
+    imports.bynsyncify.fputs = fputs;
 
     // Basic file functions
     imports.env.fopen = fopen;
