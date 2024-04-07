@@ -112,7 +112,7 @@
 
                         // Here, Asyncify is a drop-in replacement for WebAssembly
                         // it
-                        Asyncify.instantiateStreaming(fetch("main.wasm"), imports).then(({instance, module}) => {
+                        Asyncify.instantiateStreaming(fetch("./main.wasm"), imports).then(({instance, module}) => {
                             stdlib.postInstantiate(instance);
                             instance.exports.main(0|0, 0|0).then(() => {
                                 console.error("main done?");

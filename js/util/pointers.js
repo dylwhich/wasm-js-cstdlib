@@ -245,3 +245,7 @@ export function getArrDouble(ptr, len) {
 export function getPtrDouble(ptr) {
     return getArrDouble(ptr, 1);
 }
+
+export function setErrno(val) {
+    console.warn("NYI: setErrno(%d)", val);
+}

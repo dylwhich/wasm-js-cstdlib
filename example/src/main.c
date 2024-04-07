@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
+#include <ctype.h>
 
 #define CNFG3D
 #define CNFG_IMPLEMENTATION
@@ -132,6 +133,14 @@ int __attribute__((export_name("main"))) main(int argc, char** argv) {
     printf("Setting up rawdraw...\n");
     //CNFGSetupFullscreen("Static HTML Rawdraw WASM Example", 0);
     CNFGSetup("Static HTML Rawdraw WASM Example", 480, 560);
+
+    const char scanInput[] = "      str \t\n   \t\t \n\t 3.14159 64  0x36  test";
+    float scanPi = 0.0;
+    int scanInt = 0;
+    unsigned char scanChar = '\0';
+    char scanStr[5] = {0};
+    int result = sscanf(scanInput, "str %f %d %hhx %5s", &scanPi, &scanInt, &scanChar, &scanStr);
+    printf("sscanf result=%d\n", result);
 
     int screenX, screenY;
     int count = 0;

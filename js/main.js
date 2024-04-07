@@ -10,6 +10,7 @@ import * as pointers from "./util/pointers.js";
 
 // Header implementations
 import assertConfig from "./assert.js";
+import ctypeConfig from "./ctype.js";
 import direntConfig from "./dirent.js";
 import inttypesConfig from "./inttypes.js";
 import mallocConfig, { postInstantiate as mallocPostInst } from "./malloc.js";
@@ -92,6 +93,7 @@ export default function configure(imports, settings, extraModules) {
 
     // Configure each module
     assertConfig(imports, settings);
+    ctypeConfig(imports, settings);
     direntConfig(imports, settings);
     inttypesConfig(imports, settings);
     mallocConfig(imports, settings);

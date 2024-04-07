@@ -50,7 +50,7 @@ export function memset(s, c, n) {
 
 export function strcat(dst, src) {
     const d = getMemView(dst);
-    const s = getMemView(s);
+    const s = getMemView(src);
 
     let i = 0;
     // advance to the end of the str
@@ -96,7 +96,7 @@ export function strcmp(s1, s2) {
 
 export function strcpy(dst, src) {
     const d = getMemView(dst);
-    const s = getMemView(s);
+    const s = getMemView(src);
 
     let i = 0;
     do {
@@ -108,7 +108,7 @@ export function strcpy(dst, src) {
 
 export function stpcpy(dst, src) {
     const d = getMemView(dst);
-    const s = getMemView(s);
+    const s = getMemView(src);
 
     let i = 0;
     do {
@@ -171,6 +171,15 @@ export function strstr(haystack, needle) {
     }
 }
 
+// technically from ctype.h but who cares (not webassembly! or me!)
+export function tolower(c) {
+    return String.fromCharCode(c).toLowerCase().charCodeAt(0);
+}
+
+export function toupper(c) {
+    return String.fromCharCode(c).toUpperCase().charCodeAt(0);
+}
+
 export default function configure(imports, settings) {
     // memcmp
     imports.env.memcmp = memcmp;
@@ -207,4 +216,7 @@ export default function configure(imports, settings) {
     imports.env.strncpy = strncpy;
     // strstr
     imports.env.strstr = strstr;
+
+    imports.env.tolower = tolower;
+    imports.env.tolower = toupper;
 }

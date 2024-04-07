@@ -1,4 +1,6 @@
 import { getStr, getWideStr, writeStr, getMemView, getArrUint8, getPtrAligned, endian, allocStaticHeap } from './util/pointers.js'
+import { isspace } from './ctype.js';
+import { malloc } from './malloc.js';
 
 export const EOF = -1;
 export const F_OK = 0;
@@ -102,6 +104,508 @@ class ArgInfo {
             }
         } else {
             return 0;
+        }
+    }
+}
+
+const SIGNS = "+-";
+const SEP = ",";
+const OCT_DIG = "01234567";
+const DEC_DIG = "0123456789";
+const HEX_DIG_LOW = "abcdef";
+const HEX_DIG_UP = "ABCDEF";
+
+const BASE_DIGITS = {
+    8: OCT_DIG,
+    10: DEC_DIG,
+    16: DEC_DIG + HEX_DIG_UP + HEX_DIG_LOW
+}
+
+/**
+ * Parse a number from a stream with specific parameters
+ * @param {FileHandle} handle The file handle to read from
+ * @param {String} base The base to read. "i" or undefined is any base, "o" is octal, "d" is 10, and "x" or "X" are hexadecimal
+ * @param {boolean} unsigned Whether to treat the number as unsigned, default false
+ * @param {String} sep The thousands separator character to use, or undefined for none
+ * @param {boolean} frac Whether to parse as a floating point number
+ * @param {number} maxlen The maximum number of chars to read
+ * @returns a tuple containing the parsed number value (or null), and the total number of characters read
+ */
+async function streamParseNumber(handle, base, unsigned, sep, frac, maxlen) {
+    // 0: whitespace
+    // 1: sign
+    // 2: prefix
+    // 3: number
+    // 4: decimal separator
+    // 5: number (fractional part)
+    // 6: exp separator (e/E)
+    // 7: sign
+    // 8: number (exponent)
+    let state = 0;
+
+    // chars read... always going to be the same as the found length?
+    let offset = 0;
+    // whitespcae skipped
+    let whitespace = 0;
+
+    // buffer for the parsed input
+    let prefix = "";
+
+    // buffer the parsed string -- concatenating to a string is the fastest way to do this apparently
+    let found = "";
+    let ignored = 0;
+
+    let baseNum = 0;
+    let totalRead = 0;
+
+    let c = -1;
+    while (-1 != (c = await jsFgetc(handle))) {
+        totalRead++;
+
+        // 0: Whitespace
+        if (state === 0 && isspace(c)) {
+            // ignore whitespace
+            whitespace++;
+            continue;
+        } else if (state == 0) {
+            // end of whitespace, continue
+            state++;
+        }
+
+        const strChar = String.fromCharCode(c);
+
+        // 1: Sign
+        if (state === 1) {
+            if (strChar === '+' || strChar === '-') {
+                found += strChar;
+                state++;
+                continue;
+            } else {
+                state++;
+            }
+        }
+
+        // 2: Prefix
+        if (state === 2) {
+            if (base === "d") {
+                // no prefix for decimal. continue immediately.
+                baseNum = 10;
+                state++;
+            } else {
+                // all the other things. no prefix,
+                if (prefix.length === 0 && strChar === "0") {
+                    prefix += strChar;
+                    if (base === "o") {
+                        // octal just has 0 prefix, so continue immediately
+                        baseNum = 8;
+                        state++;
+                    }
+
+                    // next char
+                    continue;
+                } else if (prefix.length === 1 && (strChar === "x" || strChar === "X")) {
+                    prefix += strChar;
+                    base = "x";
+                    baseNum = 16;
+                    state++;
+                    // next char
+                    continue;
+                } else {
+                    // non-matched char, end of prefix
+                    if (prefix === "0") {
+                        base = "o";
+                        baseNum = 8;
+                    } else if (!prefix && (!base || base === "i")) {
+                        base = "d";
+                        baseNum = 10;
+                    }
+                    // character is still unhandled, so go to the next state with this char (no continue)
+                    state++;
+                }
+            }
+        }
+
+        // 3: Number
+        if (state === 3) {
+            const digits = BASE_DIGITS[baseNum] ?? DEC_DIG;
+            if (digits.includes(strChar)) {
+                found += strChar;
+                continue;
+            } else if (sep && sep.includes(strChar)) {
+                ignored++;
+                continue;
+            } else {
+                // unmatched char, keep trying to handle
+                state++;
+            }
+        }
+
+        // 4: Decimal separator
+        if (state === 4) {
+            if (frac) {
+                if (strChar === ".") {
+                    found += strChar;
+                    state++;
+                    continue;
+                } else {
+                    // skip fractional portion if there's no separator
+                    // (but there could still be exponent)
+                    state += 2;
+                }
+            } else {
+                // done! this is an int, don't do any fractional parsing
+                // set state to 0 so we skip the rest of the loop until the end
+                state = 0;
+            }
+        }
+
+        // 5: Number (fractional part)
+        if (state === 5) {
+            // at this point everything will be decimals
+            // no way i'm going to handle hex floats, that's just weird???
+            if (DEC_DIG.includes(strChar)) {
+                found += strChar;
+                continue;
+            } else {
+                state++;
+            }
+        }
+
+        // 6: exponent separator
+        if (state === 6) {
+            if (strChar === "e" || strChar === "E") {
+                found += strChar;
+                state++;
+                continue;
+            } else {
+                state++;
+            }
+        }
+
+        // 7: exponent sign
+        if (state === 7) {
+            if (strChar === '+' || strChar === '-') {
+                found += strChar;
+                state++;
+                continue;
+            } else {
+                state++;
+            }
+        }
+
+        // 8: Numbe (exponent)
+        if (state === 8) {
+            // another number, for the exponent
+            if (DEC_DIG.includes(strChar)) {
+                found += strChar;
+                continue;
+            } else {
+                state++;
+            }
+        }
+
+        // put last char back as it was not used
+        totalRead--;
+        handle.ungetchar(c);
+        break;
+    }
+
+    if (found) {
+        try {
+            if (frac) {
+                return ( parseFloat(found), totalRead );
+            } else {
+                return ( parseInt(found, baseNum), totalRead );
+            }
+        } catch (err) {
+            return ( null, totalRead );
+        }
+    } else {
+        return ( null, totalRead );
+    }
+}
+
+function parseCharacterSet(set) {
+    const exclude = set.startswith("^");
+    if (exclude) {
+        // chop off the '^'
+        set = set.substring(1);
+    }
+
+    let result = "";
+
+    let lastChar = null;
+    for (char of set) {
+        if (lastChar === '-') {
+            if (!result) {
+                // this is undefined behavior so I'm allowed to log stuff
+                console.warn("Bad character set format %s, put '-' at the end if you want to include it, not at the start", set);
+                // add the literal dash
+                result += lastChar;
+                // and add this char as a regular char
+                result += char;
+            } else {
+                // add all the intervening chars, e.g. for a-f, this takes care of adding b, c, d, e, and f
+                for (let i = result.charCodeAt(result.length - 1) + 1; i <= char.charCodeAt(0); i++) {
+                    result += String.fromCharCode(i);
+                }
+            }
+        } else if (char !== '-') {
+            // just include all characters other than dash into the string
+            result += char;
+        }
+
+        // always update lastChar, including for '-'
+        lastChar = char;
+    }
+
+    // If '-' was the last character in the set, add it as a literal
+    if (lastChar === '-') {
+        result += '-';
+    }
+
+    return {set: result, exclude: exclude};
+}
+
+class ScanArg {
+    constructor(varargs, argIndex, match, argnum, apostropheOrStar, malloc, maxlen, len, conv, group) {
+        this.assign = (!apostropheOrStar || !apostropheOrStar.includes("*"))
+                       && (match != '%%');
+
+        // whether to allow thousands separators in decimals
+        this.sep = (apostropheOrStar && apostropheOrStar.includes("'"));
+        this.malloc = (malloc == "m");
+        this.maxlen = maxlen ? parseInt(maxlen) : 0;
+
+        if (this.assign && varargs) {
+            const addr = getPtrAligned(varargs, 4).getUint32(4 * argIndex, endian);
+            this.view = getMemView(addr);
+
+            // check if we're using %n$ format and arrange the args
+
+            let width = 4;
+            let memberWidth = 0;
+
+            switch (conv) {
+                case 's': memberWidth = 1; break; // string
+                case 'c': {
+                    // chars, no terminating null,
+                    memberWidth = 1;
+                    if (maxlen === 0) {
+                        maxlen = 1;
+                    }
+                    break;
+                }
+                case 'p': break; // void pointer
+            }
+
+            switch (len) {
+                case 'hh': width = 1; break; // char aka i8/u8
+                case 'h':  width = 2; break; // short aka i16/u16
+                case 'l':  {
+                    if (conv == 'c' || conv == 's') {
+                        memberWidth = 2;
+                    } else if ("Eaefg".includes(conv)) {
+                        width = 8;
+                    } else {
+                        width = 4;
+                    }
+
+                    break;
+                }
+                case 'll': width = 8; break;
+            }
+
+            this.width = width;
+            this.memberWidth = memberWidth;
+            this.conv = conv;
+            this.group = group;
+        }
+    }
+
+    /**
+     *
+     * @param {FileHandle} handle The file handle to read from
+     * @param {Number} offset The offset within the fscanf call of the handle pointer (chars read so far)
+     */
+    async read(handle, offset) {
+        // contains so-far read string
+        let str = "";
+        let value;
+        let count;
+
+        let readType;
+        let addNul = true;
+
+        switch (this.conv.charAt(0)) {
+            case '%': {
+                // read literal '%'
+                if (await jsFgetc(handle) == '%') {
+                    count = 1;
+                } else {
+                    count = 0;
+                }
+
+                readType = "literal";
+                break;
+            }
+
+            case 'd': {
+                // parse decimal number: [+-]?[0-9]+
+                // note, take sep into account
+                [value, count] = await streamParseNumber(handle, "d", false, (this.sep ? ',' : null), false, this.maxlen);
+                readType = "int";
+                break;
+            }
+            case 'i': {
+                // parse any base: ([+-]?([0-9]+|0x[0-9a-z]+|0X[0-9A-Z]+|0[0-7]+))
+                [value, count] = await streamParseNumber(handle, undefined, false, (this.sep ? ',' : null), false, this.maxlen);
+                readType = "int";
+                break;
+            }
+
+            case 'o': {
+                // parse octal number: [+-]?[0-7]+
+                [value, count] = await streamParseNumber(handle, "o", false, null, false, this.maxlen);
+                readType = "uint";
+                break;
+            }
+
+            case 'u': {
+                // parse unsigned decimal: [+]?[0-9]+
+                // note, take sep into account
+                [value, count] = await streamParseNumber(handle, "d", true, (this.sep ? ',' : null), false, this.maxlen);
+                readType = "uint";
+                break;
+            }
+
+            case 'x':
+            case 'X':
+            case 'p': {
+                // parse hex number: [+]?(0x)?[0-9A-Fa-f]+
+                // ( or parse pointer: 0x[0-9a-f]+
+                [value, count] = await streamParseNumber(handle, "x", true, null, false, this.maxlen);
+                readType = "uint";
+                break;
+            }
+
+            case 'E':
+            case 'a':
+            case 'e':
+            case 'f':
+            case 'g': {
+                // parse float number: [+-]?([0-9]+)?
+                // note, take sep into account
+                [value, count] = await streamParseNumber(handle, undefined, false, (this.sep ? ',' : null), true, this.maxlen);
+                readType = "float";
+                break;
+            }
+
+            case 's': {
+                // parse string, write with NUL byte
+                // read up to whitespace or maxlength
+                let c;
+                while ((!this.maxlen || str.length < this.maxlen) && -1 != (c = await jsFgetc(handle))) {
+                    if (isspace(c)) {
+                        handle.ungetchar(c);
+                        break;
+                    }
+                    str += String.fromCharCode(c);
+                }
+                count = str.length;
+                value = str;
+                readType = "string";
+                break;
+            }
+
+            case 'c': {
+                // parse string, write without NUL byte
+                // read up to maxlength
+                let c;
+                while (str.length < this.maxlen && -1 != (c = await jsFgetc(handle))) {
+                    str += String.fromCharCode(c);
+                }
+                count = str.length;
+                value = str;
+                readType = "string";
+                addNul = false;
+                break;
+            }
+
+            case '[': {
+                // parse custom set of characters, in format
+                const {set, exclude} = parseCharacterSet(group);
+
+                let c;
+                while ((!this.maxlen || str.length < this.maxlen) && -1 != (c = await jsFgetc(handle))) {
+                    if (Boolean(set.includes(c)) != Boolean(exclude)) {
+                        // set includes and exclude=false, or:
+                        // set does not include and exclude=true
+                        // so either way, continue on
+                        str += String.fromCharCode(c);
+                    } else {
+                        // no match, put the char back
+                        handle.ungetchar(c);
+                        break;
+                    }
+
+                }
+                value = str;
+                count = str.length;
+                readType = "string";
+                break;
+            }
+
+            case 'n': {
+                value = (offset | 0);
+                count = 0;
+                readType = "uint"
+                break;
+            }
+        }
+
+        if (this.assign) {
+            if (readType === "string") {
+                const buflen = str.length + (addNul ? 1 : 0);
+
+                if (buflen > 0) {
+                    let buf = null;
+                    if (this.malloc) {
+                        buf = getMemView(malloc(buflen), buflen);
+                        this.view.setUint32(0, buf.byteOffset, endian);
+                    } else {
+                        buf = this.view;
+                    }
+
+                    writeStr(buf, str);
+                    if (addNul) {
+                        buf.setUint8(str.length, 0);
+                    }
+                }
+            } else if (readType === "int") {
+                switch (this.width) {
+                    case 1: this.view.setInt8(0, value); break;
+                    case 2: this.view.setInt16(0, value, endian); break;
+                    case 4: this.view.setInt32(0, value, endian); break;
+                    case 8: this.view.setBigInt64(0, value, endian); break;
+                }
+            } else if (readType === "uint") {
+                switch (this.width) {
+                    case 1: this.view.setUint8(0, value); break;
+                    case 2: this.view.setUint16(0, value, endian); break;
+                    case 4: this.view.setUint32(0, value, endian); break;
+                    case 8: this.view.setBigUint64(0, value, endian); break;
+                }
+            } else if (readType === "float") {
+                switch (this.width) {
+                    case 4: this.view.setFloat32(0, value, endian); break;
+                    case 8: this.view.setFloat64(0, value, endian); break;
+                }
+            }
+
+            return [value, count];
+        } else {
+            return [undefined, count];
         }
     }
 }
@@ -249,6 +753,7 @@ class FileHandle {
     #writer = null;
     #eof = false;
     #err = null;
+    #ungot = [];
 
     constructor(readStream, writeStream, mode) {
         this.readStream = readStream ? readStream : null;
@@ -289,6 +794,33 @@ class FileHandle {
 
     set err(val) {
         this.#err = val;
+    }
+
+    /**
+     *
+     * @returns A char that was most recently ungot, if any, or null. Does not interact with the stream,
+     * so if this returns null you should grab a character.
+     */
+    getchar() {
+        if (this.#ungot) {
+            return this.#ungot.pop();
+        } else {
+            return null;
+        }
+    }
+
+    ungetchar(c) {
+        if (typeof c == "number") {
+            this.#ungot.push(c);
+        } else if (typeof c == "string") {
+            this.#ungot.push(c.charCodeAt(0));
+        } else {
+            throw new TypeError("ungetchar() requires number or string, not '" + typeof c + "'");
+        }
+    }
+
+    resetGetchar() {
+        this.#ungot.length = 0;
     }
 }
 
@@ -508,6 +1040,23 @@ class HttpJsFs extends JsFs {
     }
 }
 
+function getStringReadStream(str) {
+    if (typeof str != "number" && typeof str != "string") {
+        throw new TypeError("getStringReadStream() requires either a number (pointer) or string, not '" + typeof str + "'");
+    }
+
+    const jsStr = (typeof str == "number") ? getStr(str) : str;
+
+    return new ReadableStream({
+        type: "bytes",
+        start(controller) {
+            const encoded = new Uint8Array(jsStr.length);
+            writeStr(encoded, jsStr);
+            controller.enqueue(encoded);
+        }
+    });
+}
+
 // all open files
 const FILES = [];
 
@@ -526,6 +1075,8 @@ const fsInstances = {};
 
 // A real wasm memory buffer
 let internalBuffer;
+
+const formatRegex = /%(-)?(0?[0-9]+)?([.][0-9]+)?([#][0-9]+)?(L|z|ll?|hh?)?([scfgpexdiu%])/g;
 
 function registerFile(handle) {
     console.debug("Registered file %o to fd=%o", handle, curFd);
@@ -727,6 +1278,18 @@ export function rewind(stream) {
     // so, a file handle needs a way to do that as we have no way of knowing where it came from here (nor should we need to know!)
 }
 
+export async function fflush(stream) {
+    return 0;
+}
+
+export function access(pathname, mode) {
+    return 0;
+}
+
+export function remove(pathname) {
+    return 0;
+}
+
 export function feof(stream) {
     const handle = FILES[stream];
     if (handle) {
@@ -869,15 +1432,8 @@ export async function fwrite(ptr, size, nmemb, stream) {
     }
 }
 
-// TODO / Not Yet Supported:
-// - %2$s format
-// - %n
-// - %25s string lengthing
-// - %*s style pointers
-// this means random code might fail if sprintf isn't working as expected
-function jsSprintf(cStr, varargs) {
-	const regex = /%(-)?(0?[0-9]+)?([.][0-9]+)?([#][0-9]+)?(L|z|ll?|hh?)?([scfgpexdu%])/g;
-    const str = getStr(cStr);
+function getFormatArgs(fmt, varargs, literals) {
+    const str = ((typeof fmt) == "number") ? getStr(fmt) : fmt;
 
     // This will hold type info about the C arguments and their pointers
     const cArgs = [];
@@ -911,7 +1467,7 @@ function jsSprintf(cStr, varargs) {
 
             switch (len) {
                 // no length specifier given, use the
-                case 'hh': width = 1;  break; // char aka
+                case 'hh': width = 1;  break; // char aka i8/u8
                 case 'h':  width = 2;  break; // short aka i16/u16
                 case 'l': {
                     // print wchar_t (%lc) or string of wchar_t (%ls)
@@ -943,10 +1499,97 @@ function jsSprintf(cStr, varargs) {
             curPtr = data.byteOffset + width;
         }
 
-        [...str.matchAll(regex)].forEach(element => {
+        let literalStart = 0;
+        formatRegex.lastIndex = 0;
+        for (const [i, element] of [...str.matchAll(formatRegex)].entries()) {
             sizesCallback(...element);
-        });
+            if (typeof literals != "undefined") {
+                console.log("i: %d, lastIndex: %d", i, formatRegex.lastIndex);
+            }
+        }
     }
+
+    return cArgs;
+}
+
+function processScanLiteral(regions, str, start) {
+    const wsRegex = /[\s\n\t ]+/g;
+
+    let arr = null;
+
+    let literalStart = 0;
+    while ((arr = wsRegex.exec(str)) != null) {
+        let wholeMatch = arr[0];
+        let matchStart = wsRegex.lastIndex - wholeMatch.length;
+        if (matchStart > literalStart) {
+            regions.push({ type: "literal", start: start + literalStart, length: matchStart - literalStart, str: str.substring(literalStart, matchStart)});
+        }
+        literalStart = wsRegex.lastIndex;
+
+        regions.push({ type: "whitespace", start: start + matchStart, length: wholeMatch.length });
+    }
+
+    return regions;
+}
+
+// argnum, apostropheOrStar, malloc, length, width, conversion
+
+function getScanArgs(fmt, varargs) {
+    const scanRegex = /%(?:([0-9]+)\$)?(\*'|'\*|'|\*|)?(m?)([0-9]+)?(L|z|ll?|hh?)?([scfgpeExXodiun%]|\[(\^?\]?[^\]]*)\])/g;
+    const str = ((typeof fmt) == "number") ? getStr(fmt) : fmt;
+
+    const regions = [];
+    const matches = [];
+    let matchIndex = 0;
+    let arr = null;
+
+    let literalStart = 0;
+    while ((arr = scanRegex.exec(str)) != null) {
+        let wholeMatch = arr[0];
+        let matchStart = scanRegex.lastIndex - wholeMatch.length;
+        if (matchStart > literalStart || literalStart > 0) {
+            // Handle any literals and whitespace between the formats
+            processScanLiteral(regions, str.substring(literalStart, matchStart), literalStart);
+        }
+
+        literalStart = scanRegex.lastIndex;
+
+        // argnum, apostropheOrStar, malloc, length, width, conversion
+        // ok turns out it's real simple to handle varargs here out of order, because they're all pointers
+
+        const arg = new ScanArg(varargs, matchIndex, ...arr);
+        regions.push({ type: "match", start: matchStart, length: wholeMatch.length, arg: arg });
+
+        if (arg.assign) {
+            matchIndex++;
+        }
+    }
+
+    if (regions.length > 0) {
+        // Handle any trailing literals/whitespace
+        let lastRegion = regions[regions.length-1];
+        if (lastRegion.type === "match" && (lastRegion.start + lastRegion.length) < str.length) {
+            processScanLiteral(regions, str.substring(lastRegion.start + lastRegion.length), lastRegion.start + lastRegion.length);
+        }
+    } else {
+        // Handle when the string is all literals
+        processScanLiteral(regions, str, 0);
+    }
+
+    return regions;
+}
+
+// TODO / Not Yet Supported:
+// - %2$s format
+// - %n
+// - %25s string lengthing
+// - %*s style pointers
+// this means random code might fail if sprintf isn't working as expected
+function jsSprintf(cStr, varargs) {
+    const str = getStr(cStr);
+
+    // This will hold type info about the C arguments and their pointers
+    const cArgs = getFormatArgs(str, varargs);
 
     let i = 0;
     function replCallback(match, sign, pad, precision, base, len, conv) {
@@ -988,7 +1631,8 @@ function jsSprintf(cStr, varargs) {
 	   return val;
 	}
 
-	return str.replace(regex, replCallback);
+    formatRegex.lastIndex = 0;
+    return str.replace(formatRegex, replCallback);
 }
 
 export function snprintf(buf, size, str, varargs) {
@@ -1071,14 +1715,14 @@ async function jsFwrite(ptr, size, nmemb, stream) {
 }
 
 export async function fprintf(stream, str, varargs) {
-        let result = jsSprintf(str, varargs);
-        // trim the string if too long
-        if (result.length > BUFSIZ)
-        {
-            result = result.substring(0, BUFSIZ);
-        }
-        writeStr(internalBuffer, result);
-        return await jsFwrite(internalBuffer.byteOffset, 1, result.length, stream);
+    let result = jsSprintf(str, varargs);
+    // trim the string if too long
+    if (result.length > BUFSIZ)
+    {
+        result = result.substring(0, BUFSIZ);
+    }
+    writeStr(internalBuffer, result);
+    return await jsFwrite(internalBuffer.byteOffset, 1, result.length, stream);
 }
 
 export async function fputc(c, stream) {
@@ -1110,6 +1754,152 @@ export async function fputs(strPointer, stream) {
 
 export async function puts(strPointer) {
     return await fputs(strPointer, 1);
+}
+
+const fgetcArr = new ArrayBuffer(1);
+const fgetcView = new DataView(fgetcArr, 0, 1);
+async function jsFgetc(handle) {
+    if (handle && handle.readStream) {
+        let c = handle.getchar();
+
+        if (c === null) {
+            if (handle.eof) {
+                return -1;
+            }
+
+            handle.resetGetchar();
+            const [done, value] = await handle.reader.read(fgetcView);
+            c = fgetcView.getUint8(0);
+
+            if (done) {
+                handle.eof = true;
+            }
+        }
+
+        return c;
+    } else {
+        return -1;
+    }
+}
+
+async function scanValue(handle, arg, match, argnum, apostropheOrStar, malloc, length, width, conversion, group) {
+    // argnum: 1, as in %1$s
+    // apostropheOrStar: ' or * or '* or *'
+    // malloc: m or nothing
+    // length: a number
+    // width: L, ll, l, h, hh
+    // conversion: a conversion specifier char, or "[^letters]"
+
+    console.log("scanValue(handle=%o, argnum=%s, apostropheOrStar=%s, malloc=%s, length=%s, width=%d, conversion=%d, group=%s)",
+                handle, argnum, apostropheOrStar, malloc, length, width, conversion, group);
+
+    return { value, read };
+}
+
+export async function fgetc(stream) {
+    return await jsFgetc(FILES[stream]);
+}
+
+export async function fgets(s, size, stream) {
+    // TODO stupid newlines, it should handle those
+    const handle = FILES[stream];
+    if (handle && handle.readStream) {
+        const buf = getMemView(s, size - 1);
+        handle.resetGetchar();
+        await handle.reader.read(buf);
+    } else {
+        return 0;
+    }
+}
+
+export async function getchar() {
+    return await fgetc(stdin);
+}
+
+export function ungetc(c, stream) {
+    const handle = FILES[stream];
+
+    if (handle && handle.readStream) {
+        handle.ungetchar(c);
+        return c;
+    } else {
+        return -1;
+    }
+}
+
+async function jsFscanf(stream, format, varargs) {
+    const fmtStr = getStr(format);
+    const handle = (typeof stream == "number") ? FILES[stream] : stream;
+
+    const regions = getScanArgs(fmtStr, varargs);
+    // Okay.... this is going to be reallllllly non-performant, probably
+    // It's getchars allll the way :scream:
+
+    let matchCount = 0;
+    let c = -1;
+    let offset = 0;
+
+    for (const region of regions.values()) {
+        let regionOffset = 0;
+
+        switch (region.type) {
+            case "whitespace": {
+                while (-1 != (c = await jsFgetc(handle))) {
+                    offset++;
+                    if (!isspace(c)) {
+                        offset--;
+                        handle.ungetchar(c);
+                        break;
+                    }
+                }
+                break;
+            }
+
+            case "literal": {
+                while (regionOffset < region.length
+                       && -1 != (c = await jsFgetc(handle))) {
+
+                    offset++;
+                    if (c == region.str.charCodeAt(regionOffset)) {
+                        // next literal char matches
+                        regionOffset++;
+                    } else {
+                        // char did not match, stop matching
+                        return matchCount;
+                    }
+                }
+                break;
+            }
+
+            case "match": {
+                let { value, read } = await region.arg.read(handle, offset);
+                offset += read;
+
+                console.warn("value, read: (%s, %s)", value, read);
+
+                if (value && read >= 0) {
+                    matchCount++;
+                } else {
+                    return matchCount;
+                }
+                break;
+            }
+        }
+    }
+
+    return matchCount;
+}
+
+export async function sscanf(str, format, varargs) {
+    return jsFscanf(new FileHandle(getStringReadStream(str), null, new FileMode("r")), format, varargs);
+}
+
+export async function fscanf(stream, format, varargs) {
+    return await jsFscanf(stream, format, varargs);
+}
+
+export async function scanf(format, varargs) {
+    return await fscanf(stdin, format, varargs);
 }
 
 function setupStandardStreams(settings) {
@@ -1203,16 +1993,39 @@ export default function configure(imports, settings) {
     imports.env.fprintf = fprintf;
     imports.env.snprintf = snprintf;
     imports.env.sprintf = sprintf;
+
+    imports.env.vprintf = printf;
+    imports.env.vfprintf = fprintf;
+    imports.env.vsnprintf = snprintf;
+    imports.env.vsprintf = sprintf;
+
+    imports.env.sscanf = sscanf;
+    imports.env.scanf = scanf;
+    imports.env.fscanf = fscanf;
+
+    imports.env.vsscanf = sscanf;
+    imports.env.vscanf = scanf;
+    imports.env.vfscanf = fscanf;
+
     imports.env.putchar = putchar;
     imports.env.puts = puts;
     imports.env.fputs = fputs;
 
+    imports.env.fgetc = fgetc;
+    imports.env.fgets = fgets;
+    imports.env.getc = fgetc;
+    imports.env.getchar = getchar;
+    imports.env.ungetc = ungetc;
+
     // Async file functions - bynsync registration
+    // TODO is this still necessary when using Asyncify?
     imports.bynsyncify.fopen = fopen;
     imports.bynsyncify.fwrite = fwrite;
     imports.bynsyncify.fread = fread;
     imports.bynsyncify.fprintf = fprintf;
     imports.bynsyncify.printf = printf;
+    imports.bynsyncify.vfprintf = fprintf;
+    imports.bynsyncify.vprintf = printf;
     imports.bynsyncify.puts = puts;
     imports.bynsyncify.fputc = fputc;
     imports.bynsyncify.putc = fputc;
@@ -1231,7 +2044,11 @@ export default function configure(imports, settings) {
     imports.env.ftell = ftell;
     imports.env.fseek = fseek;
     imports.env.rewind = rewind;
+    imports.env.fflush = fflush;
     imports.env.feof = feof;
     imports.env.ferr = ferror;
     imports.env.clearerr = clearerr;
+
+    imports.env.access = access;
+    imports.env.remove = remove;
 }
