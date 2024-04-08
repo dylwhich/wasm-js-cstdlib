@@ -53,7 +53,7 @@ export function ispunct(c) {
 }
 
 export function isspace(c) {
-    c == SP || (TAB <= c && c <= CR);
+    return c == SP || (TAB <= c && c <= CR);
 }
 
 export function isupper(c) {
