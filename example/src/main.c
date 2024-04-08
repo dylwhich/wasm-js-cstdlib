@@ -138,9 +138,14 @@ int __attribute__((export_name("main"))) main(int argc, char** argv) {
     float scanPi = 0.0;
     int scanInt = 0;
     unsigned char scanChar = '\0';
-    char scanStr[5] = {0};
-    int result = sscanf(scanInput, "str %f %d %hhx %5s", &scanPi, &scanInt, &scanChar, &scanStr);
+    char scanStr[6] = {0};
+    printf("Scanning %s...\n", "something");
+    int result = sscanf(scanInput, " str %f %d %hhx %5[^s]", &scanPi, &scanInt, &scanChar, &scanStr);
     printf("sscanf result=%d\n", result);
+
+    if (result == 4) {
+        printf("scanPi=%f, scanInt=%d, scanChar=%c, scanStr=%s\n", scanPi, scanInt, scanChar, scanStr);
+    }
 
     int screenX, screenY;
     int count = 0;

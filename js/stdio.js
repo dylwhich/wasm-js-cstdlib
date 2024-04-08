@@ -1,4 +1,4 @@
-import { getStr, getWideStr, writeStr, getMemView, getArrUint8, getPtrAligned, endian, allocStaticHeap } from './util/pointers.js'
+import { getStr, getWideStr, writeStr, getMemView, getArrUint8, getPtrAligned, endian, allocStaticHeap, getPtr } from './util/pointers.js'
 import { isspace } from './ctype.js';
 import { malloc } from './malloc.js';
 
@@ -313,20 +313,22 @@ async function streamParseNumber(handle, base, unsigned, sep, frac, maxlen) {
     if (found) {
         try {
             if (frac) {
-                return ( parseFloat(found), totalRead );
+                console.warn("Will parse %s as a float, read %s chars", found, totalRead);
+                return [ parseFloat(found), totalRead ];
             } else {
-                return ( parseInt(found, baseNum), totalRead );
+                console.warn("Will parse %s as a base %s number, read %s chars", found, baseNum ?? "any", totalRead);
+                return [ parseInt(found, baseNum), totalRead ];
             }
         } catch (err) {
-            return ( null, totalRead );
+            return [ null, totalRead ];
         }
     } else {
-        return ( null, totalRead );
+        return [ null, totalRead ];
     }
 }
 
 function parseCharacterSet(set) {
-    const exclude = set.startswith("^");
+    const exclude = set.startsWith("^");
     if (exclude) {
         // chop off the '^'
         set = set.substring(1);
@@ -335,7 +337,7 @@ function parseCharacterSet(set) {
     let result = "";
 
     let lastChar = null;
-    for (char of set) {
+    for (let char of set) {
         if (lastChar === '-') {
             if (!result) {
                 // this is undefined behavior so I'm allowed to log stuff
@@ -431,8 +433,8 @@ class ScanArg {
     async read(handle, offset) {
         // contains so-far read string
         let str = "";
-        let value;
-        let count;
+        let value = null;
+        let count = 0;
 
         let readType;
         let addNul = true;
@@ -534,7 +536,7 @@ class ScanArg {
 
             case '[': {
                 // parse custom set of characters, in format
-                const {set, exclude} = parseCharacterSet(group);
+                const {set, exclude} = parseCharacterSet(this.group);
 
                 let c;
                 while ((!this.maxlen || str.length < this.maxlen) && -1 != (c = await jsFgetc(handle))) {
@@ -571,15 +573,16 @@ class ScanArg {
                 if (buflen > 0) {
                     let buf = null;
                     if (this.malloc) {
-                        buf = getMemView(malloc(buflen), buflen);
-                        this.view.setUint32(0, buf.byteOffset, endian);
+                        let addr = malloc(buflen);
+                        buf = getArrUint8(addr, buflen);
+                        this.view.setUint32(0, addr|0, endian);
                     } else {
-                        buf = this.view;
+                        buf = getArrUint8(this.view.byteOffset, this.view.byteLength);
                     }
 
                     writeStr(buf, str);
                     if (addNul) {
-                        buf.setUint8(str.length, 0);
+                        buf[str.length] = 0;
                     }
                 }
             } else if (readType === "int") {
@@ -1050,9 +1053,12 @@ function getStringReadStream(str) {
     return new ReadableStream({
         type: "bytes",
         start(controller) {
-            const encoded = new Uint8Array(jsStr.length);
-            writeStr(encoded, jsStr);
-            controller.enqueue(encoded);
+            if (jsStr.length > 0) {
+                const encoded = new Uint8Array(jsStr.length);
+                writeStr(encoded, jsStr);
+                controller.enqueue(encoded);
+            }
+            controller.close();
         }
     });
 }
@@ -1424,7 +1430,7 @@ export async function fwrite(ptr, size, nmemb, stream) {
             handle.writePos += written;
             return written;
         }).catch((err) => {
-            console.debug("Write error: %o", err);
+            console.error("Write error: %o", err);
             return -1;
         });
     } else {
@@ -1532,14 +1538,12 @@ function processScanLiteral(regions, str, start) {
     return regions;
 }
 
-// argnum, apostropheOrStar, malloc, length, width, conversion
-
 function getScanArgs(fmt, varargs) {
+    // argnum, apostropheOrStar, malloc, length, width, conversion
     const scanRegex = /%(?:([0-9]+)\$)?(\*'|'\*|'|\*|)?(m?)([0-9]+)?(L|z|ll?|hh?)?([scfgpeExXodiun%]|\[(\^?\]?[^\]]*)\])/g;
     const str = ((typeof fmt) == "number") ? getStr(fmt) : fmt;
 
     const regions = [];
-    const matches = [];
     let matchIndex = 0;
     let arr = null;
 
@@ -1670,9 +1674,10 @@ async function jsFputc(char, stream) {
 
     if (handle) {
         if (handle.writeStream) {
-            internalBuffer[0] = (char & 0xFF);
+            const buf = new DataView(new ArrayBuffer(1));
+            buf.setUint8(0, (char & 0xFF));
             try {
-                await handle.writer.write(getMemView(internalBuffer.offset, 1));
+                await handle.writer.write(buf);
                 return 1;
             } catch (err) {
                 console.error("jsFputc(char, stream) err: %o", err);
@@ -1735,44 +1740,39 @@ export async function putchar(charValue) {
 }
 
 export async function fputs(strPointer, stream) {
-
-        return await new Promise((resolve, reject) => {
-            jsFwrite(strPointer, 1, getStr(strPointer).length, stream).then((res) => {
-                if (res >= 0) {
-                    jsFputc(10|0, 1).then((res) => {
-                        resolve(res);
-                    });
-                } else {
-                    resolve(-1);
-                }
-                resolve(res);
-            }).catch((err) => {
-                resolve(-1);
-            });
-        });
+    try {
+        const res = await jsFwrite(strPointer, 1, getStr(strPointer).length, stream);
+        if (res >= 0) {
+            await jsFputc(10|0, 1);
+        }
+        return res;
+    } catch (err) {
+        console.error("Got err during fputs: %s", err);
+    }
 }
 
 export async function puts(strPointer) {
     return await fputs(strPointer, 1);
 }
 
-const fgetcArr = new ArrayBuffer(1);
-const fgetcView = new DataView(fgetcArr, 0, 1);
 async function jsFgetc(handle) {
     if (handle && handle.readStream) {
         let c = handle.getchar();
 
-        if (c === null) {
+        if (c === null || typeof c == "undefined") {
             if (handle.eof) {
                 return -1;
             }
 
             handle.resetGetchar();
-            const [done, value] = await handle.reader.read(fgetcView);
-            c = fgetcView.getUint8(0);
+            const fgetcView = new DataView(new ArrayBuffer(1), 0, 1);
+            const {done, value} = await handle.reader.read(fgetcView);
 
             if (done) {
                 handle.eof = true;
+                c = -1;
+            } else {
+                c = value.getUint8(0);
             }
         }
 
@@ -1857,7 +1857,7 @@ async function jsFscanf(stream, format, varargs) {
 
             case "literal": {
                 while (regionOffset < region.length
-                       && -1 != (c = await jsFgetc(handle))) {
+                       && (-1 != (c = await jsFgetc(handle)))) {
 
                     offset++;
                     if (c == region.str.charCodeAt(regionOffset)) {
@@ -1872,7 +1872,7 @@ async function jsFscanf(stream, format, varargs) {
             }
 
             case "match": {
-                let { value, read } = await region.arg.read(handle, offset);
+                let [ value, read ] = await region.arg.read(handle, offset);
                 offset += read;
 
                 console.warn("value, read: (%s, %s)", value, read);
@@ -1891,7 +1891,7 @@ async function jsFscanf(stream, format, varargs) {
 }
 
 export async function sscanf(str, format, varargs) {
-    return jsFscanf(new FileHandle(getStringReadStream(str), null, new FileMode("r")), format, varargs);
+    return await jsFscanf(new FileHandle(getStringReadStream(str), null, new FileMode("r")), format, varargs);
 }
 
 export async function fscanf(stream, format, varargs) {
