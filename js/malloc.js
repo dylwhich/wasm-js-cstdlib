@@ -303,6 +303,8 @@ class JsHeap {
 
             // Remove the allocation from the map
             delete this.allocations[address];
+        } else {
+            console.error("Double-free of pointer 0x%s!", (address).toString(16))
         }
     }
 }

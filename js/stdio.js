@@ -332,7 +332,7 @@ function parseCharacterSet(set) {
         set = set.substring(1);
     }
 
-    let result = "";
+    let result = [];
 
     let lastChar = null;
     for (let char of set) {
@@ -341,18 +341,18 @@ function parseCharacterSet(set) {
                 // this is undefined behavior so I'm allowed to log stuff
                 console.warn("Bad character set format %s, put '-' at the end if you want to include it, not at the start", set);
                 // add the literal dash
-                result += lastChar;
+                result.push(lastChar.charCodeAt(0));
                 // and add this char as a regular char
-                result += char;
+                result.push(char.charCodeAt(0));
             } else {
                 // add all the intervening chars, e.g. for a-f, this takes care of adding b, c, d, e, and f
                 for (let i = result.charCodeAt(result.length - 1) + 1; i <= char.charCodeAt(0); i++) {
-                    result += String.fromCharCode(i);
+                    result.push(i);
                 }
             }
         } else if (char !== '-') {
             // just include all characters other than dash into the string
-            result += char;
+            result.push(char.charCodeAt(0));
         }
 
         // always update lastChar, including for '-'
@@ -361,7 +361,7 @@ function parseCharacterSet(set) {
 
     // If '-' was the last character in the set, add it as a literal
     if (lastChar === '-') {
-        result += '-';
+        result.push(lastChar.charCodeAt(0));
     }
 
     return {set: result, exclude: exclude};
@@ -375,7 +375,7 @@ class ScanArg {
         // whether to allow thousands separators in decimals
         this.sep = (apostropheOrStar && apostropheOrStar.includes("'"));
         this.malloc = (malloc == "m");
-        this.maxlen = maxlen ? parseInt(maxlen) : 0;
+        maxlen = maxlen ? parseInt(maxlen) : 0;
 
         if (this.assign && varargs) {
             const addr = getPtrAligned(varargs, 4).byteOffset + 4 * argIndex;
@@ -392,6 +392,7 @@ class ScanArg {
                     // chars, no terminating null,
                     memberWidth = 1;
                     if (maxlen === 0) {
+                        // '%c' default maxlen is 1, not 0
                         maxlen = 1;
                     }
                     break;
@@ -416,6 +417,7 @@ class ScanArg {
                 case 'll': width = 8; break;
             }
 
+            this.maxlen = maxlen;
             this.width = width;
             this.memberWidth = memberWidth;
             this.conv = conv;
@@ -565,6 +567,7 @@ class ScanArg {
         }
 
         if (this.assign) {
+            const ptrVal = getPtr(this.view.getUint32(0, endian));
             if (readType === "string") {
                 const buflen = str.length + (addNul ? 1 : 0);
 
@@ -573,9 +576,9 @@ class ScanArg {
                     if (this.malloc) {
                         let addr = malloc(buflen);
                         buf = getArrUint8(addr, buflen);
-                        this.view.setUint32(0, addr|0, endian);
+                        ptrVal.setUint32(0, addr|0, endian);
                     } else {
-                        buf = getArrUint8(this.view.byteOffset, this.view.byteLength);
+                        buf = getArrUint8(this.view.getUint32(0, endian), buflen);
                     }
 
                     writeStr(buf, str);
@@ -585,22 +588,22 @@ class ScanArg {
                 }
             } else if (readType === "int") {
                 switch (this.width) {
-                    case 1: this.view.setInt8(0, value); break;
-                    case 2: this.view.setInt16(0, value, endian); break;
-                    case 4: this.view.setInt32(0, value, endian); break;
-                    case 8: this.view.setBigInt64(0, value, endian); break;
+                    case 1: ptrVal.setInt8(0, value); break;
+                    case 2: ptrVal.setInt16(0, value, endian); break;
+                    case 4: ptrVal.setInt32(0, value, endian); break;
+                    case 8: ptrVal.setBigInt64(0, value, endian); break;
                 }
             } else if (readType === "uint") {
                 switch (this.width) {
-                    case 1: this.view.setUint8(0, value); break;
-                    case 2: this.view.setUint16(0, value, endian); break;
-                    case 4: this.view.setUint32(0, value, endian); break;
-                    case 8: this.view.setBigUint64(0, value, endian); break;
+                    case 1: ptrVal.setUint8(0, value); break;
+                    case 2: ptrVal.setUint16(0, value, endian); break;
+                    case 4: ptrVal.setUint32(0, value, endian); break;
+                    case 8: ptrVal.setBigUint64(0, value, endian); break;
                 }
             } else if (readType === "float") {
                 switch (this.width) {
-                    case 4: this.view.setFloat32(0, value, endian); break;
-                    case 8: this.view.setFloat64(0, value, endian); break;
+                    case 4: ptrVal.setFloat32(0, value, endian); break;
+                    case 8: ptrVal.setFloat64(0, value, endian); break;
                 }
             }
 
@@ -1227,10 +1230,8 @@ export async function fopen(pathname, mode) {
                 }
 
                 if (out) {
-                    console.debug("found %o", out);
                     resolve(registerFile(out));
                 } else {
-                    console.debug("didn't find")
                     resolve(0);
                 }
             });
@@ -1264,6 +1265,8 @@ export function fclose(stream) {
         }
 
         unregisterFile(stream);
+    } else {
+        console.error("Attempt to close nonexistent or already-closed file handle %s", stream);
     }
 
     return 0;
@@ -1690,10 +1693,7 @@ async function jsFwrite(ptr, size, nmemb, stream) {
 
     if (handle) {
         const arr = getArrUint8(ptr, (size * nmemb));
-        console.debug("[async] jsFwrite(%d, %d, %d) writing... %o to %o (%s)", ptr, size, nmemb, arr, handle, getStr(ptr));
         if (handle.writeStream) {
-            console.debug("writer: %o", handle.writer);
-
             try {
                 await handle.writer.write(arr);
                 let writeLen = (size * nmemb);

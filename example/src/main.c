@@ -150,8 +150,9 @@ int __attribute__((export_name("main"))) main(int argc, char** argv) {
     char scanStr[6] = {0};
     printf("scanInput == %d\n", (int)scanInput);
     printf("Scanning %s... also %s and %s\n", scanInput, testinghmm, someOtherData);
-    int result = sscanf(scanInput, " str %f %d %hhx %5[^s]", &scanPi, &scanInt, &scanChar, &scanStr);
+    int result = sscanf(scanInput, " str %f %d %hhx %5[^s]", &scanPi, &scanInt, &scanChar, scanStr);
     printf("sscanf result=%d\n", result);
+    printf("scanStr = %d\n", scanStr);
 
     if (result == 4) {
         printf("scanPi=%f, scanInt=%d, scanChar=%c, scanStr=%s\n", scanPi, scanInt, scanChar, scanStr);
@@ -159,6 +160,16 @@ int __attribute__((export_name("main"))) main(int argc, char** argv) {
 
     printf("StaticLongStr is %s\n", staticLongStr);
     printf("ConstLongStr is %s\n", constLongStr);
+
+    // let's scan more
+    FILE* f4 = fopen("spiffs_image/scan.txt", "r");
+    printf("Opened file f4=%p\n", f4);
+    char* allocStr = NULL;
+    result = fscanf(f4, "%m[^\n]", &allocStr);
+    fclose(f4);
+    printf("fscanf result: %d\n", result);
+    printf("allocStr: %s\n", allocStr);
+    free(allocStr);
 
     int screenX, screenY;
     int count = 0;
