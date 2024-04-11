@@ -313,10 +313,8 @@ async function streamParseNumber(handle, base, unsigned, sep, frac, maxlen) {
     if (found) {
         try {
             if (frac) {
-                console.warn("Will parse %s as a float, read %s chars", found, totalRead);
                 return [ parseFloat(found), totalRead ];
             } else {
-                console.warn("Will parse %s as a base %s number, read %s chars", found, baseNum ?? "any", totalRead);
                 return [ parseInt(found, baseNum), totalRead ];
             }
         } catch (err) {
@@ -1361,59 +1359,60 @@ export async function fread(ptr, size, nmemb, stream) {
         let queued = 0;
         let freadLen = 0;
 
-        return await new Promise((resolve, reject) => {
+        //return await new Promise((resolve, reject) => {
         //function fetchMore() {
-            const buf = new ArrayBuffer(readLen);
-            const view = new DataView(buf, 0, readLen-queued);
+        const buf = new ArrayBuffer(readLen);
+        const view = new DataView(buf, 0, readLen-queued);
 
-            handle.reader.read(view).then(({ done, value }) => {
-                let thisRead = 0;
+        try {
+            const { done, value } = await handle.reader.read(view);
+            let thisRead = 0;
 
-                if (value) {
-                    thisRead = value.byteLength;
-                    //hexdump(view.byteOffset, view.byteLength);
-                    freadLen += thisRead;
-                    handle.readPos += thisRead;
+            if (value) {
+                thisRead = value.byteLength;
+                //hexdump(view.byteOffset, view.byteLength);
+                freadLen += thisRead;
+                handle.readPos += thisRead;
 
-                    const outBuf = getArrUint8(ptr + queued, thisRead);
-                    for (let i = 0; i < value.byteLength; i++) {
-                        outBuf[i] = value.getUint8(i);
-                    }
+                const outBuf = getArrUint8(ptr + queued, thisRead);
+                for (let i = 0; i < value.byteLength; i++) {
+                    outBuf[i] = value.getUint8(i);
                 }
+            }
 
-                if (freadLen < readLen) {
-                    queued += thisRead;
+            if (freadLen < readLen) {
+                queued += thisRead;
 
-                    // Don't resume, keep fetching until we get all we can or the stream closes
-                    if (!done) {
-                        handle.reader.closed.then(() => {
-                            handle.eof = true;
-                            console.debug("locked?????", handle.reader.locked);
-                            resolve(freadLen);
-                        }).catch((err) => {
-                            console.error("err on reader.closed()! %o", err);
-                            resolve(freadLen);
-                        });
-                    } else {
-                        console.debug("Unexpectedly done???");
+                // Don't resume, keep fetching until we get all we can or the stream closes
+                if (!done) {
+                    try {
+                        await handle.reader.closed;
                         handle.eof = true;
-                        resolve(freadLen);
+                        console.debug("locked?????", handle.reader.locked);
+                        return freadLen;
+                    } catch (err) {
+                        console.error("err on reader.closed()! %o", err);
+                        return freadLen;
                     }
                 } else {
-                    // we're done or got all the things, return!
-                    resolve(freadLen);
+                    console.debug("Unexpectedly done???");
+                    handle.eof = true;
+                    return freadLen;
                 }
+            } else {
+                // we're done or got all the things, return!
+                 return freadLen;
+            }
 
-            }).catch((err) => {
-                console.error("err: %o", err);
-                // todo error codes
-                handle.err = 1;
+        } catch (err) {
+            console.error("err: %o", err);
+            // todo error codes
+            handle.err = 1;
 
-                resolve(0);
-            });
-        });
+            return 0;
+        }
     } else {
-        return await Promise.resolve(-1);
+        return -1;
     }
 }
 
@@ -1423,97 +1422,24 @@ export async function fwrite(ptr, size, nmemb, stream) {
     if (handle && handle.writeStream) {
         const arr = getArrUint8(ptr, (size * nmemb));
 
-        return await handle.writer.write(arr).then((res) => {
-            console.debug("written, res => %o", res);
-
+        try {
+            let res = await handle.writer.write(arr);
             let written = (size * nmemb);
             handle.writePos += written;
             return written;
-        }).catch((err) => {
+        } catch (err) {
             console.error("Write error: %o", err);
             return -1;
-        });
+        }
     } else {
-        return await Promise.resolve(-1);
+        return -1;
     }
 }
 
-function getFormatArgs(fmt, varargs, literals) {
+function getFormatArgs(fmt, varargs) {
     const str = ((typeof fmt) == "number") ? getStr(fmt) : fmt;
 
-    // This will hold type info about the C arguments and their pointers
-    const cArgs = [];
 
-    if (varargs != 0) {
-        // pointer to the current argument
-        let curPtr = varargs;
-
-        // I've solved the mystery of how %f and %lf both work for either float and double, which are different sizes
-        // Apparently the C spec (6.5.2.2/6) says that floats in varargs get auto-promoted to doubles! Wild.
-
-        // ok not ideal but the easiest way to do this is going to be in two passes
-        // first to figure out expected types for the args
-        // next to actually do the conversion and printing
-        function sizesCallback(match, sign, pad, precision, base, len, conv) {
-            // Ignore '%%' as that's just a literal
-            if (match=='%%') return;
-
-            // by default, everything's an int
-            let width = 4;
-            // basically for wchars?
-            let memberWidth = 0;
-
-            switch (conv) {
-                case 's': memberWidth = 1; break;
-                case 'e':
-                case 'f':
-                case 'g': width = 8; break;
-                // the rest are all ints (4) when there's no length modifier
-            }
-
-            switch (len) {
-                // no length specifier given, use the
-                case 'hh': width = 1;  break; // char aka i8/u8
-                case 'h':  width = 2;  break; // short aka i16/u16
-                case 'l': {
-                    // print wchar_t (%lc) or string of wchar_t (%ls)
-                    if (conv == 'c') {
-                        width = 2;
-                    }
-                    else if (conv == 's') {
-                        memberWidth = 2;
-                    }
-                    // print long for %d, %i, %p, %x, etc.
-                    else width = 4;
-                    break; // long aka i32/u32, for ints, or wchar_t for %c ()
-                }
-                case 'll': width = 8;  break; // long long aka i64/u64
-                case 'L':  width = 16; break; // long double aka f128 aka two f64s aka who cares
-                case 'j':  width = 8;  break; // intmax_t/uintmax_t aka i64/u64
-                case 'z':  width = 8;  break; // size_t/ssize_t aka u64/i64(?)
-                case 't':  width = 8;  break; // ptrdiff_t aka i64?
-            }
-
-            // Get the next appropriately-aligned value
-            let data = getPtrAligned(curPtr, width);
-
-            // set the width to memberWidth if present, but otherwise still use width to advance the pointer
-            // (the ArgInfo doesn't care about the pointer width, just the data width)
-            cArgs.push(new ArgInfo(conv, (memberWidth ? memberWidth : width), data));
-
-            // We can't just do `curPtr += width` because of alignment
-            curPtr = data.byteOffset + width;
-        }
-
-        let literalStart = 0;
-        formatRegex.lastIndex = 0;
-        for (const [i, element] of [...str.matchAll(formatRegex)].entries()) {
-            sizesCallback(...element);
-            if (typeof literals != "undefined") {
-                console.log("i: %d, lastIndex: %d", i, formatRegex.lastIndex);
-            }
-        }
-    }
 
     return cArgs;
 }
@@ -1593,7 +1519,77 @@ function jsSprintf(cStr, varargs) {
     const str = getStr(cStr);
 
     // This will hold type info about the C arguments and their pointers
-    const cArgs = getFormatArgs(str, varargs);
+    const cArgs = [];
+
+    if (varargs != 0) {
+        // pointer to the current argument
+        let curPtr = varargs;
+
+        // I've solved the mystery of how %f and %lf both work for either float and double, which are different sizes
+        // Apparently the C spec (6.5.2.2/6) says that floats in varargs get auto-promoted to doubles! Wild.
+
+        // ok not ideal but the easiest way to do this is going to be in two passes
+        // first to figure out expected types for the args
+        // next to actually do the conversion and printing
+        function sizesCallback(match, sign, pad, precision, base, len, conv) {
+            // Ignore '%%' as that's just a literal
+            if (match=='%%') return;
+
+            // by default, everything's an int
+            let width = 4;
+            // basically for wchars?
+            let memberWidth = 0;
+
+            switch (conv) {
+                case 's': memberWidth = 1; break;
+                case 'e':
+                case 'f':
+                case 'g': width = 8; break;
+                // the rest are all ints (4) when there's no length modifier
+            }
+
+            switch (len) {
+                // no length specifier given, use the
+                case 'hh': width = 1;  break; // char aka i8/u8
+                case 'h':  width = 2;  break; // short aka i16/u16
+                case 'l': {
+                    // print wchar_t (%lc) or string of wchar_t (%ls)
+                    if (conv == 'c') {
+                        width = 2;
+                    }
+                    else if (conv == 's') {
+                        memberWidth = 2;
+                    }
+                    // print long for %d, %i, %p, %x, etc.
+                    else width = 4;
+                    break; // long aka i32/u32, for ints, or wchar_t for %c ()
+                }
+                case 'll': width = 8;  break; // long long aka i64/u64
+                case 'L':  width = 16; break; // long double aka f128 aka two f64s aka who cares
+                case 'j':  width = 8;  break; // intmax_t/uintmax_t aka i64/u64
+                case 'z':  width = 8;  break; // size_t/ssize_t aka u64/i64(?)
+                case 't':  width = 8;  break; // ptrdiff_t aka i64?
+            }
+
+            // Get the next appropriately-aligned value
+            let data = getPtrAligned(curPtr, width);
+
+            // set the width to memberWidth if present, but otherwise still use width to advance the pointer
+            // (the ArgInfo doesn't care about the pointer width, just the data width)
+            cArgs.push(new ArgInfo(conv, (memberWidth ? memberWidth : width), data));
+
+            // We can't just do `curPtr += width` because of alignment
+            curPtr = data.byteOffset + width;
+        }
+
+        formatRegex.lastIndex = 0;
+        for (const [i, element] of [...str.matchAll(formatRegex)].entries()) {
+            sizesCallback(...element);
+            if (typeof literals != "undefined") {
+                console.log("i: %d, lastIndex: %d", i, formatRegex.lastIndex);
+            }
+        }
+    }
 
     let i = 0;
     function replCallback(match, sign, pad, precision, base, len, conv) {
@@ -1874,8 +1870,6 @@ async function jsFscanf(stream, format, varargs) {
             case "match": {
                 let [ value, read ] = await region.arg.read(handle, offset);
                 offset += read;
-
-                console.warn("value, read: (%s, %s)", value, read);
 
                 if (value && read >= 0) {
                     matchCount++;

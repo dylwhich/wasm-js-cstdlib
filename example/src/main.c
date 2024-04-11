@@ -24,11 +24,14 @@ void __attribute__((export_name("HandleMotion"))) HandleMotion( int x, int y, in
 	printf("Motion: (%d, %d), mask=%d\n", x, y, mask);
 }
 
+static const char staticLongStr[] = "this string is more than 32 characters long and is static const";
+const char constLongStr[] = "this string is also pretty long but it is not declared static, just const";
+
 int __attribute__((export_name("main"))) main(int argc, char** argv) {
     printf("argc: %d\n", argc);
 
-    const char textA[] = "Hello!";
-    const char textB[] = "Second text";
+    const char* textA = "Hello!";
+    const char* textB = "Second text";
     int signedIntA = 255;
     int signedIntB = -123456789;
     unsigned int unsignedInt = 0xDEADBEEF;
@@ -91,7 +94,9 @@ int __attribute__((export_name("main"))) main(int argc, char** argv) {
     printf("total chars read %d\n", off);
     buf[off] = '\0';
 
-    printf("Buf: %s\n", buf);
+    const char* testinghmm = "gosh will this work tho";
+
+    printf("Buf: %s, test: %s, ok but %s\n", buf, "test", testinghmm);
     fclose(txt);
 
     printf("~~~~~~~~~~\n");
@@ -120,8 +125,8 @@ int __attribute__((export_name("main"))) main(int argc, char** argv) {
     printf("memcmp(textA, textB) == %d\n", memcmp(textA, textB, 7));
     printf("memcmp(textB, textA) == %d\n", memcmp(textB, textA, 7));
 
-    const char h[] = "hello";
-    const char hw[] = "hello world";
+    const char* h = "hello";
+    const char* hw = "hello world";
     printf("strcmp(hello, hello world) == %d\n", strcmp(h, hw));
     printf("strncmp(hello, hello world, 5) == %d\n", strncmp(h, hw, 5));
     printf("strncmp(hello, hello world, 6) == %d\n", strncmp(h, hw, 6));
@@ -134,18 +139,26 @@ int __attribute__((export_name("main"))) main(int argc, char** argv) {
     //CNFGSetupFullscreen("Static HTML Rawdraw WASM Example", 0);
     CNFGSetup("Static HTML Rawdraw WASM Example", 480, 560);
 
-    const char scanInput[] = "      str \t\n   \t\t \n\t 3.14159 64  0x36  test";
+    const char* someOtherData = "31 char stringt now maybe the ";
+    const char* longerString = "33 char string doesn't work tho!";
+    /*\t\n   \t\t \n\t*/
+    const char* scanInput = "    str  3.14159 64  0x36  test";
+    printf("31: %d, 33: %d, scanInput: %d\n", someOtherData, longerString, scanInput);
     float scanPi = 0.0;
     int scanInt = 0;
     unsigned char scanChar = '\0';
     char scanStr[6] = {0};
-    printf("Scanning %s...\n", "something");
+    printf("scanInput == %d\n", (int)scanInput);
+    printf("Scanning %s... also %s and %s\n", scanInput, testinghmm, someOtherData);
     int result = sscanf(scanInput, " str %f %d %hhx %5[^s]", &scanPi, &scanInt, &scanChar, &scanStr);
     printf("sscanf result=%d\n", result);
 
     if (result == 4) {
         printf("scanPi=%f, scanInt=%d, scanChar=%c, scanStr=%s\n", scanPi, scanInt, scanChar, scanStr);
     }
+
+    printf("StaticLongStr is %s\n", staticLongStr);
+    printf("ConstLongStr is %s\n", constLongStr);
 
     int screenX, screenY;
     int count = 0;
