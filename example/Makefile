@@ -59,4 +59,4 @@ index.html: template.ht opt.js
 	./subst template.ht -s -f JAVASCRIPT_DATA opt.js -o $@
 
 clean:
-	rm -f subst index.html blob_b64 opt.js mid.js
+	rm -f subst index.html blob_b64 opt.js mid.js main.wasm

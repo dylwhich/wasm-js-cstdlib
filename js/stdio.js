@@ -378,7 +378,7 @@ class ScanArg {
         this.maxlen = maxlen ? parseInt(maxlen) : 0;
 
         if (this.assign && varargs) {
-            const addr = getPtrAligned(varargs, 4).getUint32(4 * argIndex, endian);
+            const addr = getPtrAligned(varargs, 4).byteOffset + 4 * argIndex;
             this.view = getMemView(addr);
 
             // check if we're using %n$ format and arrange the args
