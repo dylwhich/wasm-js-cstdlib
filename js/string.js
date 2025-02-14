@@ -214,10 +214,21 @@ export function strtok_r(str, delim, saveptr) {
 
 }
 
-export function strpbrk(str, accept) {
+// char *
+export function strpbrk(/* const char * */ s, /* const char * */ accept) {
+    let jsStr = getStr(s);
+    let jsAccept = getStr(accept);
 
+    let acceptSet = new Set(jsAccept);
+
+    for (let i = 0; i < jsStr.length; i++) {
+        if (accept.has(jsStr.charAt(i))) {
+            return s + i;
+        }
+    }
+
+    return 0;
 }
-
 
 export default function configure(imports, settings) {
     // memcmp

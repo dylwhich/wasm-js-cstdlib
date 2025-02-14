@@ -1,4 +1,7 @@
-import { getPtrUint32, getStr, getMemView, endian, setErrno } from './util/pointers.js';
+import { getPtrUint32, getStr, getPtr, getMemView, endian, setErrno } from './util/pointers.js';
+import { asyncSuspend, asyncResume } from './util/asyncify.js';
+
+let table;
 
 export function exit(status) {
     if (typeof status != "undefined" && status != 0) {
@@ -187,7 +190,6 @@ export default function configure(imports, settings) {
     imports.env.atoi = atoi;
     imports.env.atol = atol;
     imports.env.atoll = atoll;
-    imports.env.atoi = atoi;
     imports.env.getenv = getenv;
     imports.env.qsort = qsort;
     imports.env.srand = srand;

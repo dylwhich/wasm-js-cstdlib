@@ -13,6 +13,8 @@ int atoi(const char* nptr);
 long atol(const char* nptr);
 long long atoll(const char* nptr);
 
+long strtol(const char* nptr, char** endptr, int base);
+
 char* getenv(const char* name);
 
 void qsort(void* base, size_t nmemb, size_t size, int (*compar)(const void*, const void*));

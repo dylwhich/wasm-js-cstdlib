@@ -42,3 +42,12 @@ float sqrtf(float x);
 double exp(double x);
 float expf(float x);
 //long double expl(long double x);
+
+double frexp(double x, int* exp);
+float frexpf(float x, int* exp);
+
+double log(double x);
+float logf(float x);
+
+double pow(double x, double y);
+float powf(float x, float y);

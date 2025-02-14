@@ -15,6 +15,8 @@ typedef int FILE;
 
 typedef long fpos_t;
 
+typedef int mode_t;
+
 extern FILE *stdin;
 extern FILE *stdout;
 extern FILE *stderr;
@@ -69,3 +71,7 @@ void clearerr(FILE* stream);
 
 int remove(const char* pathname);
 int access(const char* pathname, int mode);
+
+int open(const char* pathname, int flags);
+int creat(const char* pathname, mode_t mode);
+void close(int fd);
