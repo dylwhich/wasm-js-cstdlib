@@ -180,6 +180,45 @@ export function toupper(c) {
     return String.fromCharCode(c).toUpperCase().charCodeAt(0);
 }
 
+
+let strtokJstr = null;
+let strtokStr = 0;
+let strtokCur = 0;
+let strtokEnd = 0;
+export function strtok(str, delim) {
+    if (str != 0) {
+        // First call to strtok
+        strtokStr = str;
+        strtokCur = str;
+        strtokJstr = getStr(str);
+        strtokEnd = str + strtokJstr.length;
+    }
+
+    const delimStr = getStr(delim);
+
+    // 1. advance strtokCur until it's no longer a delimiter
+    while (strtokCur < strtokEnd && delimStr.includes(strtokJstr.charAt(strtokCur - strtokStr))) {
+        strtokCur++;
+    }
+
+    const result = strtokCur;
+    while (strtokCur < strtokEnd && !delimStr.includes(strtokJstr.charAt(strtokCur - strtokStr))) {
+        strtokCur++;
+    }
+
+    getPtrUint8(strtokCur)[0] = 0;
+    return result;
+}
+
+export function strtok_r(str, delim, saveptr) {
+
+}
+
+export function strpbrk(str, accept) {
+
+}
+
+
 export default function configure(imports, settings) {
     // memcmp
     imports.env.memcmp = memcmp;
@@ -219,4 +258,8 @@ export default function configure(imports, settings) {
 
     imports.env.tolower = tolower;
     imports.env.tolower = toupper;
+
+    imports.env.strtok = strtok;
+    imports.env.strtok_r = strtok_r;
+    imports.env.strpbrk = strpbrk;
 }

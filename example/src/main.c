@@ -2,6 +2,7 @@
 #include <string.h>
 #include <stdlib.h>
 #include <ctype.h>
+#include <stdbool.h>
 
 #define CNFG3D
 #define CNFG_IMPLEMENTATION
@@ -170,6 +171,8 @@ int __attribute__((export_name("main"))) main(int argc, char** argv) {
     printf("fscanf result: %d\n", result);
     printf("allocStr: %s\n", allocStr);
     free(allocStr);
+
+    bool test = true;
 
     int screenX, screenY;
     int count = 0;

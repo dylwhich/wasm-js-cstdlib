@@ -116,6 +116,8 @@
                             stdlib.postInstantiate(instance);
                             instance.exports.main(0|0, 0|0).then(() => {
                                 console.error("main done?");
+                            }).catch((err) => {
+                                console.error("err!", err);
                             });
                         });
                     });

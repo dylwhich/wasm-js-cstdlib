@@ -16,7 +16,7 @@ CFLAGS_WASM = \
 	-Wl,--allow-undefined \
 	-Wl,--export=__heap_base \
 	-Wl,--export-table \
-	-Wl,--warn-unresolved-symbols
+	-Wl,--warn-unresolved-symbols \
 #	-Wl,--print-map
 #	-Wl,--import-undefined \
 
@@ -24,12 +24,14 @@ INC = \
 	-I.
 
 CFLAGS_WASM += \
+	-g \
 	-nostdlib \
 	--target=wasm32 \
 	-isystem../include
 
 WASMOPT ?= wasm-opt
-WOFLAGS += --asyncify --pass-arg=asyncify-import@bynsyncify.* --pass-arg=asyncify-ignore-indirect
+WOFLAGS += --asyncify --pass-arg=asyncify-import@bynsyncify.*
+# --pass-arg=asyncify-ignore-indirect
 
 all: index.html
 

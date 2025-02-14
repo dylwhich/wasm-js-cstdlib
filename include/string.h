@@ -21,3 +21,7 @@ int strncmp(const char* s1, const char* s2, size_t n);
 int strncpy(char* dst, const char* src, size_t n);
 char* strstr(const char* haystack, const char* needle);
 
+char* strtok(char* str, const char* delim);
+char* strtok_r(char* str, const char* delim, char** saveptr);
+
+char* strpbrk(const char* str, const char* accept);

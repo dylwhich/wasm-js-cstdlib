@@ -1494,6 +1494,7 @@ function getScanArgs(fmt, varargs) {
         regions.push({ type: "match", start: matchStart, length: wholeMatch.length, arg: arg });
 
         if (arg.assign) {
+            console.warn("Match #%s is '%s' -- %o", matchIndex, str.substring(matchStart, matchStart + wholeMatch.length), regions[regions.length-1]);
             matchIndex++;
         }
     }

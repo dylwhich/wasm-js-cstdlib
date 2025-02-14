@@ -24,3 +24,6 @@ void* alloca(size_t size);
 
 double strtod(const char* nptr, char** endptr);
 float strtof(const char* nptr, char** endptr);
+
+long strtol(const char* nptr, char** endptr, int base);
+long long strtoll(const char* nptr, char** endptr, int base);

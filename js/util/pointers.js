@@ -49,7 +49,7 @@ export function postInstantiate(instance) {
 
 export function allocStaticHeap(sz, align) {
     if (heapBase == "undefined") {
-        console.error("Can't allocate static heap memory")
+        console.error("Can't allocate static heap memory");
         return -1;
     }
 
