@@ -24,6 +24,7 @@ import sys_typesConfig from "./sys/types.js";
 import timeConfig from "./time.js";
 import typesConfig from "./types.js";
 import unistdConfig from "./unistd.js";
+import shimsConfig from "./shims.js";
 
 const baseConf = {
     filesystem: {
@@ -107,6 +108,7 @@ export default function configure(imports, settings, extraModules) {
     timeConfig(imports, settings);
     typesConfig(imports, settings);
     unistdConfig(imports, settings);
+    shimsConfig(imports, settings);
 
     if (typeof extraModules != "undefined")
     {

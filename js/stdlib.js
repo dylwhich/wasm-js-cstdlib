@@ -1,5 +1,4 @@
 import { getPtrUint32, getStr, getPtr, getMemView, endian, setErrno } from './util/pointers.js';
-import { asyncSuspend, asyncResume } from './util/asyncify.js';
 
 let table;
 

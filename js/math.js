@@ -89,6 +89,7 @@ export default function configure(imports, settings) {
     imports.env.frexpf = frexp;
     imports.env.exp = exp;
     imports.env.expf = exp;
+    imports.env.log = log;
     imports.env.pow = pow;
     imports.env.powf = pow;
 }
